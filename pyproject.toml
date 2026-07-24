@@ -1,0 +1,11 @@
+[project]
+name = "enterprise-ai-operations-platform"
+version = "0.1.0"
+description = "Enterprise-grade multi-agent AI operations platform built with LangGraph, FastAPI, and MCP-ready tool integrations."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.139.2",
+    "pydantic-settings>=2.14.2",
+    "uvicorn>=0.51.0",
+]
