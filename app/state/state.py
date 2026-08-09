@@ -1,6 +1,7 @@
 from typing import TypedDict
 class EnterpriseState(TypedDict):
     user_query: str
+    project: str
     plan: list[str]
     required_sources: list[str]
 

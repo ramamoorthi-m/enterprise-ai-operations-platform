@@ -5,23 +5,17 @@ from app.tools.jira_tools import get_overdue_tasks
 from app.tools.jira_tools import get_current_sprint
 
 
-
-
 def jira_collector(state: EnterpriseState):
 
-    """
-    Mock Jira collector.
+    project = state["project"]
 
-    Later this will be replaced with a real Jira API/MCP integration.
-    """
-
-    open_tasks=get_open_tasks()
-    blocked_tasks=get_blocked_tasks()
-    overdue_tasks=get_overdue_tasks()
-    sprint=get_current_sprint()
+    open_tasks = get_open_tasks.invoke({})
+    blocked_tasks = get_blocked_tasks.invoke({})
+    overdue_tasks = get_overdue_tasks.invoke({})
+    sprint = get_current_sprint.invoke({})
 
     jira_data = {
-        "project": "Project Alpha",
+        "project": project,
         **open_tasks,
         **blocked_tasks,
         **overdue_tasks,

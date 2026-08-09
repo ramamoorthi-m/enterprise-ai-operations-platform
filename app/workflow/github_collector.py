@@ -6,12 +6,13 @@ from app.tools.github_tools import get_deployment_status
 
 
 def github_collector(state: EnterpriseState):
-    issues=get_repository_issues()
-    commits=get_recent_commits()
-    deployment=get_deployment_status()
+    project=state["project"]
+    issues=get_repository_issues.invoke({"repository":project})
+    commits=get_recent_commits.invoke({"repository":project})
+    deployment=get_deployment_status.invoke({"repository":project})
 
     github_data = {
-        "repository": "Project Alpha",
+        "repository": project,
         **issues,
         **commits,
         **deployment,
