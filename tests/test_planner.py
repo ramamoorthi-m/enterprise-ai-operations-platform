@@ -1,46 +1,44 @@
-from app.workflow.planner import planner
+from app.llm.client import GeminiClient
+from app.state.plan import InvestigationPlan
 
 
-def test_planner_github_query():
+def test_llm_planner():
 
-    state = {
-        "user_query": "Show me the latest GitHub commits"
-    }
+    llm = GeminiClient()
 
-    result = planner(state)
+    query = "Analyze the current project status and identify potential delivery blockers."
 
-    print("\nPlanner result:")
-    print(result)
+    prompt = f"""
+You are an enterprise investigation planning agent.
 
-    assert result["required_sources"] == ["github"]
-    assert result["status"] == "planning_completed"
+Analyze the user's request and create an investigation plan.
 
+Available sources:
+- GitHub: repositories, pull requests, commits, issues
+- Jira: projects, tickets, sprint status, blockers
 
-def test_planner_jira_query():
+Rules:
+- Only use github or jira.
+- Do not invent information.
+- Create concrete investigation tasks.
+- Every task must specify a source.
+- Focus on evidence collection.
 
-    state = {
-        "user_query": "Show me the overdue Jira tasks"
-    }
+User request:
+{query}
+"""
 
-    result = planner(state)
+    plan = llm.generate_structured(
+        prompt=prompt,
+        response_schema=InvestigationPlan,
+    )
 
-    print("\nPlanner result:")
-    print(result)
+    print("\nGenerated plan:")
+    print(plan.model_dump_json(indent=2))
 
-    assert result["required_sources"] == ["jira"]
-    assert result["status"] == "planning_completed"
+    assert plan.goal
+    assert plan.tasks
+    assert plan.required_sources
 
-
-def test_planner_broad_query():
-
-    state = {
-        "user_query": "Why is Project Alpha delayed?"
-    }
-
-    result = planner(state)
-
-    print("\nPlanner result:")
-    print(result)
-
-    assert result["required_sources"] == ["github", "jira"]
-    assert result["status"] == "planning_completed"
+    for task in plan.tasks:
+        assert task.source in {"github", "jira"}

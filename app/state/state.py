@@ -1,9 +1,12 @@
 from typing import TypedDict
-class EnterpriseState(TypedDict):
+class EnterpriseState(TypedDict, total=False):
     user_query: str
     project: str
-    plan: list[str]
+    plan: list[dict[str, str]]
     required_sources: list[str]
+
+    github_repository: str
+    jira_project_key: str
 
     github_data: dict[str, any]
     jira_data: dict[str, any]

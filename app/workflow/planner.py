@@ -1,29 +1,63 @@
+from app.llm.client import GeminiClient
+from app.state.plan import InvestigationPlan
 from app.state.state import EnterpriseState
 
 
 def planner(state: EnterpriseState):
+    """Generate an investigation plan using Gemini."""
 
-    query = state["user_query"].lower()
+    user_query = state["user_query"]
 
-    required_sources = []
+    prompt = f"""
+You are an enterprise investigation planning agent.
 
-    if "github" in query or "code" in query or "repository" in query:
-        required_sources.append("github")
+Analyze the user's request and create an investigation plan.
 
-    if "jira" in query or "ticket" in query or "task" in query:
-        required_sources.append("jira")
+Available enterprise systems:
 
-    # Temporary fallback for broad investigation questions
-    if not required_sources:
-        required_sources = ["github", "jira"]
+1. GitHub
+   - repositories
+   - pull requests
+   - commits
+   - issues
 
-    plan = [
-        f"Collect evidence from {source}"
-        for source in required_sources
-    ]
+2. Jira
+   - projects
+   - tickets
+   - sprint status
+   - blockers
+   - priorities
+
+Rules:
+
+- Only use GitHub and Jira as investigation sources.
+- Do not invent information.
+- Identify only the sources actually needed.
+- Create concrete investigation tasks.
+- Every task must specify either github or jira.
+- Focus on collecting evidence.
+- Do not answer the user's question.
+- Keep the plan concise.
+
+User request:
+
+{user_query}
+"""
+
+    llm = GeminiClient()
+
+    investigation_plan: InvestigationPlan = llm.generate_structured(
+        prompt=prompt,
+        response_schema=InvestigationPlan,
+    )
 
     return {
-        "plan": plan,
-        "required_sources": required_sources,
+        "project":
+            investigation_plan.project,
+        "plan": [
+            task.description
+            for task in investigation_plan.tasks
+        ],
+        "required_sources": investigation_plan.required_sources,
         "status": "planning_completed",
     }
