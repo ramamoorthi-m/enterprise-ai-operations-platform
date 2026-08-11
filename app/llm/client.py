@@ -1,8 +1,9 @@
 import os
-from typing import Type, TypeVar
+from typing import Type, TypeVar, Any, Callable
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 from pydantic import BaseModel
 
 load_dotenv()
@@ -59,3 +60,30 @@ class GeminiClient:
             raise ValueError("Gemini returned an empty response.")
 
         return response_schema.model_validate_json(response.text)
+
+    def generate_with_tools(
+        self,
+        contents: list[Any],
+        tools: list[Callable[..., Any]],
+    ) -> Any:
+        """Generate a response with manual function/tool calling."""
+
+        # Convert LangChain StructuredTool objects
+        # into Python functions expected by Gemini.
+        gemini_tools = [
+            tool.func if hasattr(tool, "func") else tool
+            for tool in tools
+        ]
+
+        tool_config = types.GenerateContentConfig(
+            tools=gemini_tools,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),
+        )
+
+        return self.client.models.generate_content(
+            model=self.model,
+            contents=contents,
+            config=tool_config,
+        )

@@ -55,7 +55,11 @@ User request:
         "project":
             investigation_plan.project,
         "plan": [
-            task.description
+            {
+                "description": task.description,
+                "source": task.source
+            }
+            
             for task in investigation_plan.tasks
         ],
         "required_sources": investigation_plan.required_sources,

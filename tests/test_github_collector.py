@@ -1,10 +1,15 @@
+import os
+
 from app.workflow.github_collector import github_collector
 
 
 def test_github_collector():
 
     state = {
-        "project": "Project Alpha"
+        "project": os.getenv(
+            "GITHUB_REPO",
+            "enterprise-ai-operations-platform",
+        )
     }
 
     result = github_collector(state)
@@ -14,10 +19,14 @@ def test_github_collector():
 
     assert result["status"] == "github_collection_completed"
 
-    assert result["github_data"]["repository"] == "Project Alpha"
+    github_data = result["github_data"]
 
-    assert result["github_data"]["open_issues"] == 5
+    assert github_data["repository"]
+    assert isinstance(github_data["repository"], str)
 
-    assert result["github_data"]["latest_commit_days_ago"] == 2
-
-    assert result["github_data"]["deployment_status"] == "failed"
+    assert "open_issues" in github_data
+    assert "latest_commit_sha" in github_data
+    assert "latest_commit_message" in github_data
+    assert "latest_commit_author" in github_data
+    assert "latest_commit_date" in github_data
+    assert "deployment_status" in github_data

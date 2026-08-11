@@ -1,7 +1,35 @@
+from app.llm.client import GeminiClient
+from app.state.plan import InvestigationPlan
 from app.workflow.planner import planner
 
 
-def test_planner_node():
+def test_planner_node(monkeypatch):
+
+    fake_plan = InvestigationPlan(
+        project="Project Alpha",
+        goal="Analyze the current project status and identify potential delivery blockers.",
+        tasks=[
+            {
+                "description": "Find overdue Jira issues and blocked tasks",
+                "source": "jira",
+            },
+            {
+                "description": "Inspect recent GitHub commits and pull requests",
+                "source": "github",
+            },
+        ],
+        required_sources=["jira", "github"],
+    )
+
+    def fake_generate_structured(self, prompt, response_schema):
+        return fake_plan
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_structured",
+        fake_generate_structured,
+    )
+
     state = {
         "user_query": "Analyze the current project status and identify potential delivery blockers."
     }

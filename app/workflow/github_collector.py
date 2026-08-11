@@ -1,5 +1,7 @@
 import os
+
 from dotenv import load_dotenv
+
 from app.state.state import EnterpriseState
 from app.tools.github_tools import get_repository_issues
 from app.tools.github_tools import get_recent_commits
@@ -18,6 +20,9 @@ def github_collector(state: EnterpriseState):
 
     repository=f"{owner}/{repo}"
 
+    print(f"DEBUG GitHub repository: {repository}")
+
+    
     issues=get_repository_issues.invoke({"repository":repository})
     commits=get_recent_commits.invoke({"repository":repository})
     deployment=get_deployment_status.invoke({"repository":repository})

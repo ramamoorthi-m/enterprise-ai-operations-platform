@@ -4,7 +4,7 @@ from app.workflow.jira_collector import jira_collector
 def test_jira_collector():
 
     state = {
-        "project": "Project Alpha"
+        "project": "SCRUM"
     }
 
     result = jira_collector(state)
@@ -14,12 +14,19 @@ def test_jira_collector():
 
     assert result["status"] == "jira_collection_completed"
 
-    assert result["jira_data"]["project"] == "Project Alpha"
+    jira_data = result["jira_data"]
 
-    assert result["jira_data"]["open_tasks"] == 8
+    assert jira_data["project"]
+    assert isinstance(jira_data["project"], str)
 
-    assert result["jira_data"]["blocked_tasks"] == 3
+    assert "open_tasks" in jira_data
+    assert "blocked_tasks" in jira_data
+    assert "overdue_tasks" in jira_data
+    assert "current_sprint" in jira_data
+    assert "issue_count" in jira_data
+    assert "issues" in jira_data
 
-    assert result["jira_data"]["overdue_tasks"] == 2
-
-    assert result["jira_data"]["current_sprint"] == "Sprint 14"
+    assert isinstance(jira_data["open_tasks"], int)
+    assert isinstance(jira_data["blocked_tasks"], int)
+    assert isinstance(jira_data["overdue_tasks"], int)
+    assert isinstance(jira_data["issues"], list)

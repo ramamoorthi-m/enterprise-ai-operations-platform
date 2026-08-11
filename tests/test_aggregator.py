@@ -1,22 +1,27 @@
+import os
+
 from app.workflow.aggregator import aggregator
 
 
 def test_aggregator():
 
+    repository = (
+        f"{os.getenv('GITHUB_OWNER')}/"
+        f"{os.getenv('GITHUB_REPO')}"
+    )
+
     state = {
+        "findings": [],
         "github_data": {
-            "repository": "Project Alpha",
-            "open_issues": 5,
-            "latest_commit_days_ago": 2,
-            "deployment_status": "failed",
+            "repository": repository,
+            "open_issues": 0,
+            "latest_commit_sha": "test-sha",
+            "latest_commit_message": "Test commit",
+            "latest_commit_author": "test-author",
+            "latest_commit_date": "2026-08-11T00:00:00Z",
+            "deployment_status": "no_workflow_runs_found",
         },
-        "jira_data": {
-            "project": "Project Alpha",
-            "open_tasks": 8,
-            "blocked_tasks": 3,
-            "overdue_tasks": 2,
-            "current_sprint": "Sprint 14",
-        },
+        "jira_data": {},
     }
 
     result = aggregator(state)
@@ -26,7 +31,6 @@ def test_aggregator():
 
     assert result["status"] == "evidence_collected"
 
-    assert len(result["findings"]) == 2
-
+    assert len(result["findings"]) == 1
     assert "GitHub:" in result["findings"][0]
-    assert "Jira:" in result["findings"][1]
+    assert repository in result["findings"][0]

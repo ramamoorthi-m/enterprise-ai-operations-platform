@@ -2,7 +2,9 @@ from app.state.state import EnterpriseState
 
 
 def aggregator(state: EnterpriseState):
-    findings = []
+    """Aggregate evidence collected during the investigation."""
+
+    findings = list(state.get("findings", []))
 
     github_data = state.get("github_data", {})
     jira_data = state.get("jira_data", {})

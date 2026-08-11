@@ -2,8 +2,10 @@ from app.state.plan import InvestigationPlan
 
 
 def test_investigation_plan():
+
     plan = InvestigationPlan(
-        goal="Determine why Project Alpha is delayed",
+        project="enterprise-ai-operations-platform",
+        goal="Analyze the current status and identify potential delivery blockers",
         tasks=[
             {
                 "description": "Find overdue Jira issues",
@@ -17,6 +19,7 @@ def test_investigation_plan():
         required_sources=["jira", "github"],
     )
 
-    assert plan.goal == "Determine why Project Alpha is delayed"
+    assert plan.project == "enterprise-ai-operations-platform"
+    assert plan.goal == "Analyze the current status and identify potential delivery blockers"
     assert len(plan.tasks) == 2
-    assert plan.tasks[0].source == "jira"
+    assert plan.required_sources == ["jira", "github"]

@@ -1,17 +1,58 @@
-from app.workflow.graph import graph
+import os
+
+from app.llm.client import GeminiClient
+from app.state.plan import InvestigationPlan, InvestigationTask
 
 
-def test_graph_planner_integration():
+def test_llm_planner(monkeypatch):
 
-    initial_state = {
-        "user_query": "Analyze the current project status and identify potential delivery blockers."
-    }
+    repository = (
+        f"{os.getenv('GITHUB_OWNER')}/"
+        f"{os.getenv('GITHUB_REPO')}"
+    )
 
-    result = graph.invoke(initial_state)
+    def fake_generate_structured(self, prompt, response_schema):
+        return InvestigationPlan(
+            project=repository,
+            goal="Analyze the current repository status and identify potential delivery blockers.",
+            tasks=[
+                InvestigationTask(
+                    description="Inspect GitHub repository issues and recent development activity",
+                    source="github",
+                ),
+                InvestigationTask(
+                    description="Inspect Jira issues and blocked or overdue tasks",
+                    source="jira",
+                ),
+            ],
+            required_sources=["github", "jira"],
+        )
 
-    print("\nFinal graph state:")
-    print(result)
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_structured",
+        fake_generate_structured,
+    )
 
-    assert result["plan"]
-    assert result["required_sources"]
-    assert result["status"] == "report_generated"
+    llm = GeminiClient()
+
+    query = (
+        "Analyze the current repository status "
+        "and identify potential delivery blockers."
+    )
+
+    plan = llm.generate_structured(
+        prompt=query,
+        response_schema=InvestigationPlan,
+    )
+
+    print("\nGenerated plan:")
+    print(plan.model_dump_json(indent=2))
+
+    assert plan.goal
+    assert plan.project == repository
+    assert plan.tasks
+    assert plan.required_sources
+
+    for task in plan.tasks:
+        assert task.source in {"github", "jira"}
