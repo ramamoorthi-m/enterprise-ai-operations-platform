@@ -14,7 +14,7 @@ class EnterpriseState(TypedDict, total=False):
     slack_data: dict[str, Any]
 
     findings:list[dict[str, Any]]
-    analysis: str
+    analysis: dict[str, Any]
     report: str
     confidence: float
     human_review_required: bool
