@@ -22,13 +22,15 @@ def route_after_github(state: EnterpriseState) -> str:
     return "aggregator"
 
 def route_after_evaluation(state):
-    if state.get("evaluation_passed", False):
+
+    if state.get("evaluation_passed"):
         return "success"
 
-    retry_count = state.get("retry_count", 0)
-    max_retries = state.get("max_retries", 2)
+    if state.get("retry_required"):
+        retry_count = state.get("retry_count", 0)
+        max_retries = state.get("max_retries", 2)
 
-    if retry_count < max_retries:
-        return "retry"
+        if retry_count < max_retries:
+            return "retry"
 
     return "failed"
