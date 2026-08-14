@@ -80,7 +80,21 @@ class InvestigationAgent:
                     )
 
                 # Execute the LangChain tool.
-                result = tool.invoke(arguments)
+                try:
+                    if hasattr(tool, "invoke"):
+                        result = tool.invoke(arguments)
+
+                    else:
+                        result = tool(**arguments)
+
+                    
+
+                except Exception as exc:
+                    result={
+                        "tool": tool_name,
+                        "error": str(exc),
+                        
+                    }
 
                 history.append(
                     {
