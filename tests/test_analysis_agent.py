@@ -2,7 +2,29 @@ from app.agents.analysis import AnalysisAgent
 from app.llm.client import GeminiClient
 
 
-def test_analysis_agent():
+def test_analysis_agent(monkeypatch):
+    def fake_generate_structured(
+        self,
+        prompt,
+        response_schema,
+    ):
+        return response_schema(
+            summary="Project is progressing normally.",
+            key_findings=[
+                "No overdue Jira tasks were found.",
+                "Recent GitHub development activity was observed.",
+            ],
+            risks=[],
+            evidence_gaps=[],
+            confidence=0.9,
+            assessment="No significant delivery blockers were identified.",
+        )
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_structured",
+        fake_generate_structured,
+    )
 
     state = {
         "user_query": (
@@ -50,7 +72,7 @@ def test_analysis_agent():
         },
 
         "jira_data": {
-            "get_overdue_tasks": {
+            "jira_get_overdue_tasks": {
                 "project": "SCRUM",
                 "overdue_tasks": 0,
             }
@@ -70,7 +92,7 @@ def test_analysis_agent():
         "investigation_history": [
             {
                 "iteration": 1,
-                "tool": "get_overdue_tasks",
+                "tool": "jira_get_overdue_tasks",
                 "arguments": {
                     "project": "SCRUM"
                 },

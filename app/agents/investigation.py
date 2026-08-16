@@ -1,3 +1,4 @@
+import inspect 
 from typing import Any, Callable
 
 from google.genai import types
@@ -18,12 +19,22 @@ class InvestigationAgent:
         self.tools = tools
         self.max_iterations = max_iterations
 
-        self.tool_map = {
-            tool.name if hasattr(tool, "name") else tool._name_: tool
-            for tool in tools
-        }
+        self.tool_map = {}
 
-    def investigate(
+        for tool in tools:
+            name = getattr(tool, "name", None)
+
+            if name is None:
+                name = getattr(tool, "name", None)
+
+            if name is None:
+                raise ValueError(
+                    f"Tool has no usable name: {tool}"
+                )
+
+            self.tool_map[name] = tool
+
+    async def investigate(
         self,
         plan: list[dict[str, Any]],
         state: dict[str, Any],
@@ -68,8 +79,9 @@ class InvestigationAgent:
 
             for function_call in function_calls:
 
-                tool_name = function_call.name
+                raw_tool_name = function_call.name
                 arguments = function_call.args or {}
+                tool_name = raw_tool_name.split(":")[-1].strip()
 
                 tool = self.tool_map.get(tool_name)
 
@@ -81,11 +93,14 @@ class InvestigationAgent:
 
                 # Execute the LangChain tool.
                 try:
-                    if hasattr(tool, "invoke"):
-                        result = tool.invoke(arguments)
+                    if hasattr(tool, "ainvoke"):
+                        result = await tool.ainvoke(arguments)
 
                     else:
                         result = tool(**arguments)
+
+                        if inspect.isawaitable(result):
+                            result = await result
 
                     
 

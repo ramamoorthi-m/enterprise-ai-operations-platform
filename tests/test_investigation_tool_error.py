@@ -1,3 +1,4 @@
+import pytest
 from app.agents.investigation import InvestigationAgent
 
 
@@ -50,8 +51,8 @@ def failing_tool(project: str):
 
 failing_tool.name = "failing_tool"
 
-
-def test_investigation_handles_tool_error():
+@pytest.mark.asyncio
+async def test_investigation_handles_tool_error():
 
     llm = FailingLLM()
 
@@ -61,7 +62,7 @@ def test_investigation_handles_tool_error():
         max_iterations=3,
     )
 
-    result = agent.investigate(
+    result = await agent.investigate(
         plan=[
             {
                 "description": "Check Jira tasks",

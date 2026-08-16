@@ -9,6 +9,7 @@ dependencies = [
     "google-genai>=2.17.0",
     "langchain-google-genai>=4.3.2",
     "langgraph>=1.2.9",
+    "mcp[cli]>=2.0.0",
     "pydantic-settings>=2.14.2",
     "python-dotenv>=1.2.2",
     "requests>=2.34.2",
@@ -18,6 +19,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [tool.pytest.ini_options]

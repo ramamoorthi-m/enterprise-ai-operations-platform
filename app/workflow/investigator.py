@@ -4,123 +4,184 @@ from app.agents.investigation import InvestigationAgent
 from app.llm.client import GeminiClient
 from app.state.state import EnterpriseState
 
-from app.tools.jira_tools import (
-    get_open_tasks,
-    get_blocked_tasks,
-    get_overdue_tasks,
-    get_current_sprint,
-)
+from app.mcp.jira_client import JiraMCPClient
+from app.mcp.github_client import GitHubMCPClient
 
-from app.tools.github_tools import (
-    get_repository_issues,
-    get_recent_commits,
-    get_deployment_status,
-)
+from app.tools.jira_mcp_tools import JiraMCPToolProvider
+from app.tools.github_mcp_tools import GitHubMCPToolProvider
 
 
-def investigator(state: EnterpriseState):
+async def investigator(state: EnterpriseState):
     """LangGraph node that runs the InvestigationAgent."""
 
     llm = GeminiClient()
 
+    # ---------------------------------------------------------
+    # Connect to Jira MCP server
+    # ---------------------------------------------------------
+
+    jira_client = JiraMCPClient()
+    await jira_client.connect()
+
+    jira_provider = JiraMCPToolProvider(
+        jira_client
+    )
+
+    jira_tools = jira_provider.get_tools()
+
+    # ---------------------------------------------------------
+    # Connect to GitHub MCP server
+    # ---------------------------------------------------------
+
+    github_client = GitHubMCPClient()
+    await github_client.connect()
+
+    github_provider = GitHubMCPToolProvider(
+        github_client
+    )
+
+    github_tools = github_provider.get_tools()
+
+    # ---------------------------------------------------------
+    # Combine MCP tools
+    # ---------------------------------------------------------
+
     tools = [
-        get_open_tasks,
-        get_blocked_tasks,
-        get_overdue_tasks,
-        get_current_sprint,
-        get_repository_issues,
-        get_recent_commits,
-        get_deployment_status,
+        *jira_tools,
+        *github_tools,
     ]
 
-    agent = InvestigationAgent(
-        llm=llm,
-        tools=tools,
-        max_iterations=state.get(
-            "max_investigation_iterations",
-            5,
-        ),
-    )
+    try:
+        # -----------------------------------------------------
+        # Create Investigation Agent
+        # -----------------------------------------------------
 
-    plan = state.get("plan", [])
+        agent = InvestigationAgent(
+            llm=llm,
+            tools=tools,
+            max_iterations=state.get(
+                "max_investigation_iterations",
+                5,
+            ),
+        )
 
-    normalized_plan = []
+        # -----------------------------------------------------
+        # Normalize planner output
+        # -----------------------------------------------------
 
-    for task in plan:
-        if hasattr(task, "model_dump"):
-            normalized_plan.append(task.model_dump())
-        elif isinstance(task, dict):
-            normalized_plan.append(task)
+        plan = state.get("plan", [])
 
-    github_owner = os.getenv("GITHUB_OWNER")
-    github_repo = os.getenv("GITHUB_REPO")
+        normalized_plan = []
 
-    investigation_state = {
-        **state,
-        "github_repository": state.get(
-            "github_repository"
-        ) or f"{github_owner}/{github_repo}",
-    }
+        for task in plan:
+            if hasattr(task, "model_dump"):
+                normalized_plan.append(
+                    task.model_dump()
+                )
 
-    result = agent.investigate(
-        plan=normalized_plan,
-        state=investigation_state,
-    )
+            elif isinstance(task, dict):
+                normalized_plan.append(task)
 
-    history = result.get(
-        "investigation_history",
-        [],
-    )
+        # -----------------------------------------------------
+        # Build investigation state
+        # -----------------------------------------------------
 
-    github_data = {}
-    jira_data = {}
+        github_owner = os.getenv(
+            "GITHUB_OWNER"
+        )
 
-    github_tools = {
-        "get_repository_issues",
-        "get_recent_commits",
-        "get_deployment_status",
-    }
+        github_repo = os.getenv(
+            "GITHUB_REPO"
+        )
 
-    jira_tools = {
-        "get_open_tasks",
-        "get_blocked_tasks",
-        "get_overdue_tasks",
-        "get_current_sprint",
-    }
+        investigation_state = {
+            **state,
+            "github_repository": (
+                state.get("github_repository")
+                or f"{github_owner}/{github_repo}"
+            ),
+        }
 
-    for item in history:
-        tool_name = item.get("tool")
-        tool_result = item.get("result")
+        # -----------------------------------------------------
+        # Run investigation
+        # -----------------------------------------------------
 
-        if tool_name in github_tools:
-            github_data[tool_name] = tool_result
+        result = await agent.investigate(
+            plan=normalized_plan,
+            state=investigation_state,
+        )
 
-        elif tool_name in jira_tools:
-            jira_data[tool_name] = tool_result
-
-    return {
-        "investigation_history": history,
-
-        "investigation_iteration": result.get(
-            "investigation_iteration",
-            0,
-        ),
-
-        "investigation_complete": result.get(
-            "investigation_complete",
-            False,
-        ),
-
-        "github_data": github_data,
-        "jira_data": jira_data,
-
-        "findings": result.get(
-            "findings",
+        history = result.get(
+            "investigation_history",
             [],
-        ),
+        )
 
-        "status": result.get(
-            "status",
-            "investigation_completed",
-        ),
-    }
+        # -----------------------------------------------------
+        # Separate evidence by source
+        # -----------------------------------------------------
+
+        github_data = {}
+        jira_data = {}
+
+        github_tool_names = {
+            "github_get_repository_issues",
+            "github_get_recent_commits",
+            "github_get_deployment_status",
+        }
+
+        jira_tool_names = {
+            "jira_get_open_tasks",
+            "jira_get_blocked_tasks",
+            "jira_get_overdue_tasks",
+            "jira_get_current_sprint",
+        }
+
+        for item in history:
+
+            tool_name = item.get("tool")
+            tool_result = item.get("result")
+
+            if tool_name in github_tool_names:
+                github_data[tool_name] = tool_result
+
+            elif tool_name in jira_tool_names:
+                jira_data[tool_name] = tool_result
+
+        # -----------------------------------------------------
+        # Return LangGraph state update
+        # -----------------------------------------------------
+
+        return {
+            "investigation_history": history,
+
+            "investigation_iteration": result.get(
+                "investigation_iteration",
+                0,
+            ),
+
+            "investigation_complete": result.get(
+                "investigation_complete",
+                False,
+            ),
+
+            "github_data": github_data,
+            "jira_data": jira_data,
+
+            "findings": result.get(
+                "findings",
+                [],
+            ),
+
+            "status": result.get(
+                "status",
+                "investigation_completed",
+            ),
+        }
+
+    finally:
+        # -----------------------------------------------------
+        # Always close MCP connections
+        # -----------------------------------------------------
+
+        await github_client.close()
+        await jira_client.close()

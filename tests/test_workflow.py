@@ -1,5 +1,7 @@
+import pytest
 from app.workflow.graph import graph
 from app.llm.client import GeminiClient
+
 
 
 def fake_generate(self, prompt: str) -> str:
@@ -138,11 +140,11 @@ def fake_generate_with_tools(self, contents, tools):
         return FakeToolResponse(
             function_calls=[
                 FakeFunctionCall(
-                    name="get_overdue_tasks",
+                    name="jira_get_overdue_tasks",
                     args={"project": "SCRUM"},
                 ),
                 FakeFunctionCall(
-                    name="get_recent_commits",
+                    name="github_get_recent_commits",
                     args={
                         "repository": "ramamoorthi-m/enterprise-ai-operations-platform"
                     },
@@ -168,8 +170,8 @@ def fake_generate_with_tools(self, contents, tools):
 # Enterprise workflow test
 # ------------------------------------------------------------------
 
-
-def test_enterprise_workflow(monkeypatch):
+@pytest.mark.asyncio
+async def test_enterprise_workflow(monkeypatch):
 
     global _tool_call_count
     _tool_call_count = 0
@@ -227,7 +229,7 @@ def test_enterprise_workflow(monkeypatch):
         "max_retries": 2,
     }
 
-    result = graph.invoke(initial_state)
+    result = await graph.ainvoke(initial_state)
 
     print("\nFINAL STATE:")
     print(result)
