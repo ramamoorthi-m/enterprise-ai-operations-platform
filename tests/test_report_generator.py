@@ -38,7 +38,8 @@ def test_report_generator():
 
     assert "Enterprise Project Investigation Report" in report
     assert "SCRUM" in report
-    assert "The project shows active development." in report
-    assert "Jira has outstanding work." in report
-    assert "Deployment status is unavailable." in report
-    assert "No deployment information was retrieved." in report
+    assert "active development" in report.lower()
+    assert "Jira" in report
+    assert "GitHub" in report
+    assert "deployment" in report.lower()
+    

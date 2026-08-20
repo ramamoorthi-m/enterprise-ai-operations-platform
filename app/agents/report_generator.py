@@ -1,7 +1,13 @@
+from app.llm.groq_client import GroqClient
 from app.state.state import EnterpriseState
 
 
 class ReportGeneratorAgent:
+
+    def __init__(self):
+        self.llm = GroqClient(
+            model="openai/gpt-oss-120b"
+        )
 
     def generate(self, state: EnterpriseState):
 
@@ -11,77 +17,60 @@ class ReportGeneratorAgent:
         analysis = state.get("analysis", {})
         findings = state.get("findings", [])
 
-        summary = analysis.get(
-            "summary",
-            "No summary was available."
-        )
+        jira_data = state.get("jira_data", {})
+        github_data = state.get("github_data", {})
 
-        key_findings = analysis.get("key_findings") or findings
+        prompt = f"""
+You are an enterprise project report generator.
 
-        risks = analysis.get(
-            "risks",
-            []
-        )
+Generate a concise, professional project investigation report
+based ONLY on the evidence and analysis provided below.
 
-        evidence_gaps = analysis.get(
-            "evidence_gaps",
-            []
-        )
+Do not invent facts.
+Do not infer evidence that was not collected.
+Clearly distinguish confirmed findings from uncertainty.
 
-        confidence = analysis.get(
-            "confidence",
-            state.get("confidence", 0.0)
-        )
+PROJECT:
+{project}
 
-        report_lines = [
-            f"# Enterprise Project Investigation Report",
-            "",
-            f"Project: {project}",
-            "",
-            "## Investigation Request",
-            user_query,
-            "",
-            "## Executive Summary",
-            summary,
-            "",
-            "## Key Findings",
-        ]
+INVESTIGATION REQUEST:
+{user_query}
 
-        if key_findings:
-            for finding in key_findings:
-                report_lines.append(f"- {finding}")
-        else:
-            report_lines.append("- No significant findings were identified.")
+ANALYSIS:
+{analysis}
 
-        report_lines.extend([
-            "",
-            "## Risks",
-        ])
+FINDINGS:
+{findings}
 
-        if risks:
-            for risk in risks:
-                report_lines.append(f"- {risk}")
-        else:
-            report_lines.append("- No significant risks were identified.")
+JIRA EVIDENCE:
+{jira_data}
 
-        report_lines.extend([
-            "",
-            "## Evidence Gaps",
-        ])
+GITHUB EVIDENCE:
+{github_data}
 
-        if evidence_gaps:
-            for gap in evidence_gaps:
-                report_lines.append(f"- {gap}")
-        else:
-            report_lines.append("- No significant evidence gaps were identified.")
+Generate the report using exactly these sections:
 
-        report_lines.extend([
-            "",
-            "## Confidence",
-            f"{confidence:.2f}",
-        ])
+# Enterprise Project Investigation Report
 
-        report = "\n".join(report_lines)
+## Investigation Request
+
+## Executive Summary
+
+## Key Findings
+
+## Risks
+
+## Evidence Gaps
+
+## Confidence
+
+The report should be useful to an engineering manager or project
+stakeholder.
+
+Keep it concise but specific.
+"""
+
+        report = self.llm.generate(prompt)
 
         return {
             "report": report,

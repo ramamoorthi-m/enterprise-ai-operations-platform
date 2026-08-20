@@ -1,13 +1,13 @@
 from typing import Any
 
-from app.llm.client import GeminiClient
+from app.llm.groq_client import GroqClient
 from app.state.analysis import AnalysisResult
 
 
 class AnalysisAgent:
     """LLM-powered agent that analyzes collected enterprise evidence."""
 
-    def __init__(self, llm: GeminiClient) -> None:
+    def __init__(self, llm: GroqClient) -> None:
         self.llm = llm
 
     def analyze(

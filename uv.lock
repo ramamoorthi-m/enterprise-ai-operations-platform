@@ -321,6 +321,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "google-genai" },
+    { name = "groq" },
     { name = "langchain-google-genai" },
     { name = "langgraph" },
     { name = "mcp", extra = ["cli"] },
@@ -340,6 +341,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.139.2" },
     { name = "google-genai", specifier = ">=2.17.0" },
+    { name = "groq", specifier = ">=1.6.0" },
     { name = "langchain-google-genai", specifier = ">=4.3.2" },
     { name = "langgraph", specifier = ">=1.2.9" },
     { name = "mcp", extras = ["cli"], specifier = ">=2.0.0" },
@@ -417,6 +419,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/58/2e/03a0486e192cde27f7ffbb20c63fa934a132396a667b1a0e1b7e5f606ad7/google_genai-2.17.0.tar.gz", hash = "sha256:6b640a2390c82b4a240873eddb9f518c6d2c33244b2de16ed3d14526a6da7f57", size = 648676, upload-time = "2026-08-06T05:10:41.382Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/37/71e397a5b93d9a3c139e95acdcb00b4169ed59ae20e16616f2875170abb7/google_genai-2.17.0-py3-none-any.whl", hash = "sha256:a4835563c60aee646c9c4b261c507aa4a624710d25017012d20dc65abf3d9a54", size = 1044950, upload-time = "2026-08-06T05:10:39.308Z" },
+]
+
+[[package]]
+name = "groq"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/67/3e/687064918e861082cb02165872bbda31269126a108a78794dae86ddadae2/groq-1.6.0.tar.gz", hash = "sha256:c4237ecf0053ba85fd926bb31cb4b178996310474b4618867994e3e40d8e3c02", size = 158424, upload-time = "2026-07-24T17:25:49.517Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/40/164338d796cf41ea5930a42023e986d8c993720bed670d5aa143e5854873/groq-1.6.0-py3-none-any.whl", hash = "sha256:fa16db582455db324adcff1b5908519474736872e28cd5c8fa2b8bef6860e12a", size = 143693, upload-time = "2026-07-24T17:25:48.2Z" },
 ]
 
 [[package]]

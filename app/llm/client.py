@@ -19,15 +19,24 @@ class GeminiClient:
         model = os.getenv("GEMINI_MODEL")
 
         if not api_key:
-            raise ValueError("GEMINI_API_KEY is not configured.")
+            raise ValueError(
+                "GEMINI_API_KEY is not configured."
+            )
 
         if not model:
-            raise ValueError("GEMINI_MODEL is not configured.")
+            raise ValueError(
+                "GEMINI_MODEL is not configured."
+            )
 
         self.model = model
-        self.client = genai.Client(api_key=api_key)
+        self.client = genai.Client(
+            api_key=api_key
+        )
 
-    def generate(self, prompt: str) -> str:
+    def generate(
+        self,
+        prompt: str,
+    ) -> str:
         """Generate a text response from Gemini."""
 
         response = self.client.models.generate_content(
@@ -36,7 +45,9 @@ class GeminiClient:
         )
 
         if not response.text:
-            raise ValueError("Gemini returned an empty response.")
+            raise ValueError(
+                "Gemini returned an empty response."
+            )
 
         return response.text
 
@@ -57,33 +68,138 @@ class GeminiClient:
         )
 
         if not response.text:
-            raise ValueError("Gemini returned an empty response.")
+            raise ValueError(
+                "Gemini returned an empty response."
+            )
 
-        return response_schema.model_validate_json(response.text)
+        return response_schema.model_validate_json(
+            response.text
+        )
+
+    @staticmethod
+    def _tool_to_function_declaration(
+        tool: Any,
+    ) -> types.FunctionDeclaration:
+        """
+        Convert a LangChain tool into a Gemini-safe
+        FunctionDeclaration.
+
+        Only serializable metadata is passed to Gemini.
+        The actual LangChain/MCP tool object is never
+        passed into GenerateContentConfig.
+        """
+
+        name = getattr(
+            tool,
+            "name",
+            None,
+        )
+
+        if not name:
+            raise ValueError(
+                f"Tool has no name: {tool}"
+            )
+
+        description = getattr(
+            tool,
+            "description",
+            "",
+        )
+
+        args_schema = getattr(
+            tool,
+            "args_schema",
+            None,
+        )
+
+        if args_schema is not None:
+            parameters_schema = (
+                args_schema.model_json_schema()
+            )
+        else:
+            parameters_schema = {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            }
+
+        return types.FunctionDeclaration(
+            name=name,
+            description=description,
+            parameters_json_schema=parameters_schema,
+        )
+
+    @classmethod
+    def _convert_tools(
+        cls,
+        tools: list[Any],
+    ) -> list[types.Tool]:
+        """
+        Convert application tools into Gemini-safe
+        function declarations.
+        """
+
+        function_declarations = []
+
+        for tool in tools:
+            declaration = (
+                cls._tool_to_function_declaration(
+                    tool
+                )
+            )
+
+            function_declarations.append(
+                declaration
+            )
+
+        return [
+            types.Tool(
+                function_declarations=function_declarations
+            )
+        ]
 
     def generate_with_tools(
         self,
-        contents: list[Any],
-        tools: list[Callable[..., Any]],
-    ) -> Any:
-        """Generate a response with manual function/tool calling."""
+        contents: Any,
+        tools: list[Any],
+        force_tool_call: bool = False,
+    ):
+        """
+        Generate a Gemini response using manually
+        declared function tools.
 
-        # Convert LangChain StructuredTool objects
-        # into Python functions expected by Gemini.
-        gemini_tools = [
-            tool.func if hasattr(tool, "func") else tool
-            for tool in tools
-        ]
+        Gemini receives only serializable function
+        declarations. The actual tools remain in the
+        InvestigationAgent and are executed there.
+        """
 
-        tool_config = types.GenerateContentConfig(
+        gemini_tools = self._convert_tools(
+            tools
+        )
+
+        tool_config = None
+
+        if force_tool_call:
+            tool_config = types.ToolConfig(
+                function_calling_config=(
+                    types.FunctionCallingConfig(
+                        mode="ANY",
+                    )
+                )
+            )
+
+        config = types.GenerateContentConfig(
             tools=gemini_tools,
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                disable=True
+            tool_config=tool_config,
+            automatic_function_calling=(
+                types.AutomaticFunctionCallingConfig(
+                    disable=True
+                )
             ),
         )
 
         return self.client.models.generate_content(
             model=self.model,
             contents=contents,
-            config=tool_config,
+            config=config,
         )

@@ -119,7 +119,7 @@ class FakeToolResponse:
 _tool_call_count = 0
 
 
-def fake_generate_with_tools(self, contents, tools):
+def fake_generate_with_tools(self, contents, tools, force_tool_call=False,):
     """
     Fake Gemini tool-calling response.
 

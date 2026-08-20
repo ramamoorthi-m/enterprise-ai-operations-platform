@@ -25,7 +25,7 @@ class FailingLLM:
     def __init__(self):
         self.calls = 0
 
-    def generate_with_tools(self, contents, tools):
+    def generate_with_tools(self, contents, tools, force_tool_call=False):
 
         self.calls += 1
 

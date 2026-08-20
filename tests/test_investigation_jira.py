@@ -13,6 +13,7 @@ class FakeGemini:
         self,
         contents,
         tools,
+        force_tool_call=False,
     ):
         self.calls += 1
 

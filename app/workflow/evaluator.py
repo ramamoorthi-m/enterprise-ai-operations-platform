@@ -1,10 +1,12 @@
 from app.agents.evaluator import EvaluatorAgent
-from app.llm.client import GeminiClient
+from app.llm.groq_client import GroqClient
 
 
 def evaluator(state):
 
-    llm = GeminiClient()
+    llm = GroqClient(
+        model="openai/gpt-oss-120b"
+    )
 
     agent = EvaluatorAgent(
         llm=llm
