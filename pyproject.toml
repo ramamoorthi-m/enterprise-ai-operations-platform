@@ -10,6 +10,7 @@ dependencies = [
     "groq>=1.6.0",
     "langchain-google-genai>=4.3.2",
     "langgraph>=1.2.9",
+    "langsmith>=0.10.10",
     "mcp[cli]>=2.0.0",
     "pydantic-settings>=2.14.2",
     "python-dotenv>=1.2.2",
