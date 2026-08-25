@@ -5,6 +5,10 @@ from typing import Any, Callable
 from google.genai import types
 
 from app.llm.client import GeminiClient
+from app.guardrails.tool_guardrail import (
+    validate_tool_call,
+    ToolGuardrailError,
+)
 
 
 class InvestigationAgent:
@@ -510,6 +514,20 @@ the investigation plan.
         tool_name: str,
         arguments: dict[str, Any],
     ) -> Any:
+
+        try:
+            validate_tool_call(
+                tool_name=tool_name,
+                arguments=arguments,
+                available_tools=self.tool_map,
+            )
+
+        except ToolGuardrailError as exc:
+            return {
+                "tool": tool_name,
+                "error": str(exc),
+                "guardrail_blocked": True
+            }
 
         tool = self.tool_map.get(tool_name)
 

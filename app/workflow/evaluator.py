@@ -18,6 +18,7 @@ def evaluator(state):
         "evaluation_passed": result["evaluation_passed"],
         "confidence": result["confidence"],
         "evaluation_reason": result["reason"],
+        "human_review_reason": result["reason"],
         "evidence_sufficient": result[
             "evidence_sufficient"
         ],

@@ -229,7 +229,14 @@ async def test_enterprise_workflow(monkeypatch):
         "max_retries": 2,
     }
 
-    result = await graph.ainvoke(initial_state)
+    result = await graph.ainvoke(
+        initial_state,
+        config={
+            "configurable": {
+                "thread_id": "test-enterprise-workflow",
+            }
+        },
+    )
 
     print("\nFINAL STATE:")
     print(result)

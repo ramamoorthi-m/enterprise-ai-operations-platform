@@ -18,6 +18,9 @@ class EnterpriseState(TypedDict, total=False):
     report: str
     confidence: float
     human_review_required: bool
+    human_review_decision: str
+    human_review_reason: str
+
     errors: list[str]
 
     status: str
@@ -25,6 +28,7 @@ class EnterpriseState(TypedDict, total=False):
     evaluation_passed: bool
     retry_count: int
     max_retries: int
+    retry_required: bool
 
     investigation_history: list[dict[str, Any]]
     investigation_iteration: int

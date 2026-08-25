@@ -555,7 +555,14 @@ async def test_retry_recovers_missing_evidence(monkeypatch):
     # Run workflow
     # --------------------------------------------------------
 
-    result = await graph.ainvoke(initial_state)
+    result = await graph.ainvoke(
+        initial_state,
+        config={
+            "configurable": {
+                "thread_id": "test-retry-recovery",
+            }
+        },
+    )
 
     print("\nRETRY WORKFLOW FINAL STATE:")
     print(result)
