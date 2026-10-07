@@ -123,7 +123,7 @@ async def test_investigator_with_jira_mcp():
 
     state = {
         "user_query": "Why is the SCRUM project delayed?",
-        "required_sources": ["jira"],
+        "required_sources": ["jira","github"],
     }
 
     result = await investigator.investigate(

@@ -3,71 +3,42 @@ import os
 from app.agents.investigation import InvestigationAgent
 from app.llm.client import GeminiClient
 from app.state.state import EnterpriseState
-
 from app.mcp.jira_client import JiraMCPClient
 from app.mcp.github_client import GitHubMCPClient
-
 from app.tools.jira_mcp_tools import JiraMCPToolProvider
 from app.tools.github_mcp_tools import GitHubMCPToolProvider
 
 
 async def investigator(state: EnterpriseState):
-    """LangGraph node that runs the InvestigationAgent."""
-
     llm = GeminiClient()
 
-    # ---------------------------------------------------------
-    # Connect to Jira MCP server
-    # ---------------------------------------------------------
+    required_sources = set(state.get("required_sources", []))
 
-    jira_client = JiraMCPClient()
-    await jira_client.connect()
-
-    jira_provider = JiraMCPToolProvider(
-        jira_client
-    )
-
-    jira_tools = jira_provider.get_tools()
-
-    # ---------------------------------------------------------
-    # Connect to GitHub MCP server
-    # ---------------------------------------------------------
-
-    github_client = GitHubMCPClient()
-    await github_client.connect()
-
-    github_provider = GitHubMCPToolProvider(
-        github_client
-    )
-
-    github_tools = github_provider.get_tools()
-
-    # ---------------------------------------------------------
-    # Combine MCP tools
-    # ---------------------------------------------------------
-
-    tools = [
-        *jira_tools,
-        *github_tools,
-    ]
+    jira_client = None
+    github_client = None
+    tools = []
 
     try:
-        # -----------------------------------------------------
-        # Create Investigation Agent
-        # -----------------------------------------------------
+        # Connect only to the MCP sources required by the investigation plan.
+        if "jira" in required_sources:
+            jira_client = JiraMCPClient()
+            await jira_client.connect()
+
+            jira_provider = JiraMCPToolProvider(jira_client)
+            tools.extend(jira_provider.get_tools())
+
+        if "github" in required_sources:
+            github_client = GitHubMCPClient()
+            await github_client.connect()
+
+            github_provider = GitHubMCPToolProvider(github_client)
+            tools.extend(github_provider.get_tools())
 
         agent = InvestigationAgent(
             llm=llm,
             tools=tools,
-            max_iterations=state.get(
-                "max_investigation_iterations",
-                5,
-            ),
+            max_iterations=state.get("max_investigation_iterations", 5),
         )
-
-        # -----------------------------------------------------
-        # Normalize planner output
-        # -----------------------------------------------------
 
         plan = state.get("plan", [])
 
@@ -75,24 +46,12 @@ async def investigator(state: EnterpriseState):
 
         for task in plan:
             if hasattr(task, "model_dump"):
-                normalized_plan.append(
-                    task.model_dump()
-                )
-
+                normalized_plan.append(task.model_dump())
             elif isinstance(task, dict):
                 normalized_plan.append(task)
 
-        # -----------------------------------------------------
-        # Build investigation state
-        # -----------------------------------------------------
-
-        github_owner = os.getenv(
-            "GITHUB_OWNER"
-        )
-
-        github_repo = os.getenv(
-            "GITHUB_REPO"
-        )
+        github_owner = os.getenv("GITHUB_OWNER")
+        github_repo = os.getenv("GITHUB_REPO")
 
         investigation_state = {
             **state,
@@ -102,23 +61,12 @@ async def investigator(state: EnterpriseState):
             ),
         }
 
-        # -----------------------------------------------------
-        # Run investigation
-        # -----------------------------------------------------
-
         result = await agent.investigate(
             plan=normalized_plan,
             state=investigation_state,
         )
 
-        history = result.get(
-            "investigation_history",
-            [],
-        )
-
-        # -----------------------------------------------------
-        # Separate evidence by source
-        # -----------------------------------------------------
+        history = result.get("investigation_history", [])
 
         github_data = {}
         jira_data = {}
@@ -137,7 +85,6 @@ async def investigator(state: EnterpriseState):
         }
 
         for item in history:
-
             tool_name = item.get("tool")
             tool_result = item.get("result")
 
@@ -147,31 +94,17 @@ async def investigator(state: EnterpriseState):
             elif tool_name in jira_tool_names:
                 jira_data[tool_name] = tool_result
 
-        # -----------------------------------------------------
-        # Return LangGraph state update
-        # -----------------------------------------------------
-
         return {
             "investigation_history": history,
-
             "investigation_iteration": result.get(
-                "investigation_iteration",
-                0,
+                "investigation_iteration", 0
             ),
-
             "investigation_complete": result.get(
-                "investigation_complete",
-                False,
+                "investigation_complete", False
             ),
-
             "github_data": github_data,
             "jira_data": jira_data,
-
-            "findings": result.get(
-                "findings",
-                [],
-            ),
-
+            "findings": result.get("findings", []),
             "status": result.get(
                 "status",
                 "investigation_completed",
@@ -179,9 +112,17 @@ async def investigator(state: EnterpriseState):
         }
 
     finally:
-        # -----------------------------------------------------
-        # Always close MCP connections
-        # -----------------------------------------------------
+        # Cleanup only the MCP clients that were actually connected.
+        # Cleanup is best-effort so one close failure does not prevent
+        # the other client from being closed.
+        if github_client is not None:
+            try:
+                await github_client.close()
+            except Exception:
+                pass
 
-        await github_client.close()
-        await jira_client.close()
+        if jira_client is not None:
+            try:
+                await jira_client.close()
+            except Exception:
+                pass
