@@ -1,5 +1,6 @@
 import json
 
+import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
@@ -16,45 +17,115 @@ class GitHubMCPClient:
     ):
         self.server_url = server_url
         self._http_client = None
+        self._mcp_transport = None
         self._session = None
 
     async def connect(self):
         """Establish connection with the GitHub MCP server."""
 
-        self._http_client = streamable_http_client(
-            self.server_url
-        )
+        if self._session is not None:
+            return
 
-        read_stream, write_stream = (
-            await self._http_client.__aenter__()
-        )
+        http_client = None
+        mcp_transport = None
+        session = None
 
-        self._session = ClientSession(
-            read_stream,
-            write_stream,
-        )
+        try:
+            http_client = httpx2.AsyncClient(
+                timeout=httpx2.Timeout(
+                    connect=5.0,
+                    read=30.0,
+                    write=10.0,
+                    pool=5.0,
+                )
+            )
 
-        await self._session.__aenter__()
-        await self._session.initialize()
+            mcp_transport = streamable_http_client(
+                self.server_url,
+                http_client=http_client,
+            )
+
+            read_stream, write_stream = (
+                await mcp_transport.__aenter__()
+            )
+
+            session = ClientSession(
+                read_stream,
+                write_stream,
+            )
+
+            await session.__aenter__()
+            await session.initialize()
+
+            self._http_client = http_client
+            self._mcp_transport = mcp_transport
+            self._session = session
+
+        except Exception:
+            if session is not None:
+                try:
+                    await session.__aexit__(
+                        None,
+                        None,
+                        None,
+                    )
+                except Exception:
+                    pass
+
+            if mcp_transport is not None:
+                try:
+                    await mcp_transport.__aexit__(
+                        None,
+                        None,
+                        None,
+                    )
+                except Exception:
+                    pass
+
+            if http_client is not None:
+                try:
+                    await http_client.aclose()
+                except Exception:
+                    pass
+
+            raise
 
     async def close(self):
-        """Close the MCP connection."""
+        """Close the MCP connection and HTTP client."""
 
-        if self._session is not None:
-            await self._session.__aexit__(
-                None,
-                None,
-                None,
-            )
-            self._session = None
+        session = self._session
+        mcp_transport = self._mcp_transport
+        http_client = self._http_client
 
-        if self._http_client is not None:
-            await self._http_client.__aexit__(
-                None,
-                None,
-                None,
-            )
-            self._http_client = None
+        self._session = None
+        self._mcp_transport = None
+        self._http_client = None
+
+        if session is not None:
+            try:
+                await session.__aexit__(
+                    None,
+                    None,
+                    None,
+                )
+            except Exception:
+                pass
+
+        if mcp_transport is not None:
+            try:
+                await mcp_transport.__aexit__(
+                    None,
+                    None,
+                    None,
+                )
+            except Exception:
+                pass
+
+        if http_client is not None:
+            try:
+                await http_client.aclose()
+            except Exception:
+                pass
 
     async def list_tools(self):
         """Return tools exposed by the GitHub MCP server."""

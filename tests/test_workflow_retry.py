@@ -388,13 +388,29 @@ def fake_generate(self, prompt):
 
     return (
         "# Enterprise Project Investigation Report\n\n"
+
+        "## Investigation Request\n"
+        "Project: SCRUM\n"
+        "Analyze the current project status "
+        "and identify potential delivery blockers.\n\n"
+
         "## Executive Summary\n"
-        "Investigation completed successfully.\n\n"
+        "Investigation completed successfully "
+        "after recovering missing GitHub evidence.\n\n"
+
         "## Key Findings\n"
         "- Jira contains one overdue task.\n"
         "- GitHub deployment status is available.\n\n"
+
         "## Risks\n"
-        "- One overdue Jira task requires attention.\n"
+        "- One overdue Jira task requires attention.\n\n"
+
+        "## Evidence Gaps\n"
+        "- No remaining evidence gaps were identified "
+        "after the retry.\n\n"
+
+        "## Confidence\n"
+        "0.92\n"
     )
 
 
@@ -433,6 +449,12 @@ async def test_retry_recovers_missing_evidence(monkeypatch):
         GroqClient,
         "generate_structured",
         fake_generate_structured,
+    )
+
+    monkeypatch.setattr(
+        GroqClient,
+        "generate",
+        fake_generate,
     )
 
     # --------------------------------------------------------

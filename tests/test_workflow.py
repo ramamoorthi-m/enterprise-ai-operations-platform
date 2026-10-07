@@ -328,6 +328,12 @@ async def test_enterprise_workflow(monkeypatch):
         fake_generate_structured,
     )
 
+    monkeypatch.setattr(
+        GroqClient,
+        "generate",
+        fake_generate,
+    )
+
     # --------------------------------------------------------------
     # Mock Gemini tool calling
     # --------------------------------------------------------------
