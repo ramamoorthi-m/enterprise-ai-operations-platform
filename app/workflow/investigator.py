@@ -7,12 +7,18 @@ from app.mcp.jira_client import JiraMCPClient
 from app.mcp.github_client import GitHubMCPClient
 from app.tools.jira_mcp_tools import JiraMCPToolProvider
 from app.tools.github_mcp_tools import GitHubMCPToolProvider
+from app.errors.failures import (
+    CONNECTION_FAILURE,
+    build_failure,
+)
 
 
 async def investigator(state: EnterpriseState):
     llm = GeminiClient()
 
     required_sources = set(state.get("required_sources", []))
+
+    failures = []
 
     jira_client = None
     github_client = None
@@ -22,17 +28,45 @@ async def investigator(state: EnterpriseState):
         # Connect only to the MCP sources required by the investigation plan.
         if "jira" in required_sources:
             jira_client = JiraMCPClient()
-            await jira_client.connect()
 
-            jira_provider = JiraMCPToolProvider(jira_client)
-            tools.extend(jira_provider.get_tools())
+            try:
+                await jira_client.connect()
+            except Exception as exc:
+                failures.append(
+                    build_failure(
+                        category=CONNECTION_FAILURE,
+                        source="jira",
+                        message=str(exc),
+                        retryable=True,
+                        blocking=True,
+                    )
+                )
+                jira_client = None
+            else:
+                jira_provider = JiraMCPToolProvider(jira_client)
+                tools.extend(jira_provider.get_tools())
 
         if "github" in required_sources:
             github_client = GitHubMCPClient()
-            await github_client.connect()
+            try:
+                await github_client.connect()
+            except Exception as exc:
+                failures.append(
+                    build_failure(
+                        category=CONNECTION_FAILURE,
+                        source="github",
+                        message=str(exc),
+                        retryable=True,
+                        blocking=True,
+                    )
+                )
+                github_client = None
+            else:
+                github_provider = GitHubMCPToolProvider(github_client)
+                tools.extend(github_provider.get_tools())
 
-            github_provider = GitHubMCPToolProvider(github_client)
-            tools.extend(github_provider.get_tools())
+
+            
 
         agent = InvestigationAgent(
             llm=llm,
@@ -67,6 +101,13 @@ async def investigator(state: EnterpriseState):
         )
 
         history = result.get("investigation_history", [])
+
+        investigation_failures = result.get("failures", [])
+
+        all_failures = [
+            *failures,
+            *investigation_failures,
+        ]
 
         github_data = {}
         jira_data = {}
@@ -105,6 +146,7 @@ async def investigator(state: EnterpriseState):
             "github_data": github_data,
             "jira_data": jira_data,
             "findings": result.get("findings", []),
+            "failures": all_failures,
             "status": result.get(
                 "status",
                 "investigation_completed",

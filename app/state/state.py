@@ -23,7 +23,7 @@ class EnterpriseState(TypedDict, total=False):
     human_review_reason: str
 
     errors: list[str]
-
+    failures: list[dict[str, Any]]
     status: str
 
     evaluation_passed: bool

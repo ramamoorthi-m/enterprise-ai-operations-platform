@@ -5,6 +5,11 @@ from typing import Any, Callable
 from google.genai import types
 
 from app.llm.client import GeminiClient
+from app.errors.failures import (
+    INVALID_TOOL_CALL,
+    TOOL_EXECUTION_FAILURE,
+    build_failure,
+)
 from app.guardrails.tool_guardrail import (
     validate_tool_call,
     ToolGuardrailError,
@@ -48,6 +53,8 @@ class InvestigationAgent:
         ]
 
         history: list[dict[str, Any]] = []
+
+        failures: list[dict[str, Any]] = []
 
         required_sources = set(
             state.get("required_sources", [])
@@ -124,6 +131,7 @@ class InvestigationAgent:
                         "investigation_iteration": iteration,
                         "findings": [response.text],
                         "investigation_history": history,
+                        "failures": failures,
                     }
 
                 # -------------------------------------------------
@@ -182,6 +190,7 @@ class InvestigationAgent:
                             "investigation_iteration": iteration,
                             "findings": [],
                             "investigation_history": history,
+                            "failures": failures,
                         }
 
                     contents.append(
@@ -255,6 +264,7 @@ Do not invent evidence.
                         else []
                     ),
                     "investigation_history": history,
+                    "failures": failures,
                 }
 
             # =====================================================
@@ -288,15 +298,31 @@ Do not invent evidence.
 
                 if tool is None:
 
+                    message = (
+                        f"Unknown tool requested: "
+                        f"{tool_name}. "
+                        f"Available tools: "
+                        f"{list(self.tool_map.keys())}"
+                    )
+
                     result = {
                         "tool": tool_name,
-                        "error": (
-                            f"Unknown tool requested: "
-                            f"{tool_name}. "
-                            f"Available tools: "
-                            f"{list(self.tool_map.keys())}"
-                        ),
+                        "error": message,
+                        "failure_category": INVALID_TOOL_CALL,
                     }
+
+                    failures.append(
+                        build_failure(
+                            category=INVALID_TOOL_CALL,
+                            source="investigation_agent",
+                            message=message,
+                            retryable=False,
+                            blocking=False,
+                            tool=tool_name,
+
+                        )
+                    )
+                    
 
                     history.append(
                         {
@@ -366,6 +392,7 @@ the investigation plan.
             "investigation_iteration": self.max_iterations,
             "findings": [],
             "investigation_history": history,
+            "failures": failures,
         }
 
     # =================================================================
@@ -526,7 +553,8 @@ the investigation plan.
             return {
                 "tool": tool_name,
                 "error": str(exc),
-                "guardrail_blocked": True
+                "guardrail_blocked": True,
+                "failure_category": INVALID_TOOL_CALL,
             }
 
         tool = self.tool_map.get(tool_name)
@@ -563,11 +591,12 @@ the investigation plan.
 
         except Exception as exc:
 
-            # Tool failures are recorded as evidence rather
-            # than crashing the entire investigation.
+            # Tool failures are recorded in the investigation
+            # history and classified as structured failures
             return {
                 "tool": tool_name,
                 "error": str(exc),
+                "failure_category": TOOL_EXECUTION_FAILURE
             }
 
     # =================================================================
@@ -623,7 +652,7 @@ the investigation plan.
                 and result.get("error")
             ):
               continue
-              
+
 
             if tool_name.startswith("jira_"):
                 executed_sources.add("jira")

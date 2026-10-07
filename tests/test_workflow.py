@@ -1,6 +1,7 @@
 import pytest
 
 from app.workflow.graph import graph
+from app.workflow.investigator import investigator
 from app.llm.client import GeminiClient
 from app.llm.groq_client import GroqClient
 
@@ -76,6 +77,29 @@ class FakeJiraClient:
             "project": project,
             "sprint": "Sprint 1",
         }
+
+
+# ------------------------------------------------------------------
+# Failing MCP clients
+# ------------------------------------------------------------------
+
+
+class FailingJiraClient:
+
+    async def connect(self):
+        raise RuntimeError("Jira MCP unavailable")
+
+    async def close(self):
+        pass
+
+
+class FailingGitHubClient:
+
+    async def connect(self):
+        raise RuntimeError("GitHub MCP unavailable")
+
+    async def close(self):
+        pass
 
 
 # ------------------------------------------------------------------
@@ -383,6 +407,7 @@ async def test_enterprise_workflow(monkeypatch):
         "human_review_reason": "",
 
         "errors": [],
+        "failures": [],
 
         "status": "",
 
@@ -466,3 +491,230 @@ async def test_enterprise_workflow(monkeypatch):
 
     for section in required_sections:
         assert section in report
+
+
+# ------------------------------------------------------------------
+# Jira connection failure
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_jira_connection_failure_is_structured(monkeypatch):
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.JiraMCPClient",
+        FailingJiraClient,
+    )
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.GitHubMCPClient",
+        FakeGitHubClient,
+    )
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_with_tools",
+        fake_generate_with_tools,
+    )
+
+    result = await investigator(
+        {
+            "required_sources": ["jira", "github"],
+            "project": "SCRUM",
+            "plan": [
+                {
+                    "description": "Check Jira overdue tasks",
+                    "source": "jira",
+                },
+                {
+                    "description": "Inspect GitHub commits",
+                    "source": "github",
+                },
+            ],
+            "user_query": "Why is the project delayed?",
+            "github_repository": (
+                "ramamoorthi-m/"
+                "enterprise-ai-operations-platform"
+            ),
+        }
+    )
+
+    assert "failures" in result
+
+    jira_failures = [
+        failure
+        for failure in result["failures"]
+        if failure["source"] == "jira"
+    ]
+
+    assert len(jira_failures) == 1
+
+    failure = jira_failures[0]
+
+    assert failure["category"] == "connection_failure"
+    assert failure["source"] == "jira"
+    assert failure["retryable"] is True
+    assert failure["blocking"] is True
+    assert "Jira MCP unavailable" in failure["message"]
+
+
+# ------------------------------------------------------------------
+# GitHub connection failure
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_github_connection_failure_is_structured(monkeypatch):
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.GitHubMCPClient",
+        FailingGitHubClient,
+    )
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.JiraMCPClient",
+        FakeJiraClient,
+    )
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_with_tools",
+        fake_generate_with_tools,
+    )
+
+    result = await investigator(
+        {
+            "required_sources": ["jira", "github"],
+            "project": "SCRUM",
+            "plan": [
+                {
+                    "description": "Check Jira overdue tasks",
+                    "source": "jira",
+                },
+                {
+                    "description": "Inspect GitHub commits",
+                    "source": "github",
+                },
+            ],
+            "user_query": "Why is the project delayed?",
+            "github_repository": (
+                "ramamoorthi-m/"
+                "enterprise-ai-operations-platform"
+            ),
+        }
+    )
+
+    assert "failures" in result
+
+    github_failures = [
+        failure
+        for failure in result["failures"]
+        if failure["source"] == "github"
+    ]
+
+    assert len(github_failures) == 1
+
+    failure = github_failures[0]
+
+    assert failure["category"] == "connection_failure"
+    assert failure["source"] == "github"
+    assert failure["retryable"] is True
+    assert failure["blocking"] is True
+    assert "GitHub MCP unavailable" in failure["message"]
+
+
+# ------------------------------------------------------------------
+# Partial dependency failure
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_one_mcp_failure_does_not_block_other_source(
+    monkeypatch,
+):
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.JiraMCPClient",
+        FailingJiraClient,
+    )
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.GitHubMCPClient",
+        FakeGitHubClient,
+    )
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_with_tools",
+        fake_generate_with_tools,
+    )
+
+    result = await investigator(
+        {
+            "required_sources": ["jira", "github"],
+            "project": "SCRUM",
+            "plan": [
+                {
+                    "description": "Check Jira overdue tasks",
+                    "source": "jira",
+                },
+                {
+                    "description": "Inspect GitHub commits",
+                    "source": "github",
+                },
+            ],
+            "user_query": "Why is the project delayed?",
+            "github_repository": (
+                "ramamoorthi-m/"
+                "enterprise-ai-operations-platform"
+            ),
+        }
+    )
+
+    # --------------------------------------------------------------
+    # Jira connection failure must be recorded.
+    # --------------------------------------------------------------
+
+    jira_failures = [
+        failure
+        for failure in result["failures"]
+        if failure["source"] == "jira"
+    ]
+
+    assert len(jira_failures) == 1
+
+    assert (
+        jira_failures[0]["category"]
+        == "connection_failure"
+    )
+
+    # --------------------------------------------------------------
+    # GitHub investigation must still execute.
+    # --------------------------------------------------------------
+
+    github_history = [
+        item
+        for item in result["investigation_history"]
+        if item["tool"].startswith("github_")
+    ]
+
+    assert github_history
+
+    github_tools = {
+        item["tool"]
+        for item in github_history
+    }
+
+    assert "github_get_recent_commits" in github_tools
+
+    # --------------------------------------------------------------
+    # GitHub should not be recorded as a connection failure.
+    # --------------------------------------------------------------
+
+    github_failures = [
+        failure
+        for failure in result["failures"]
+        if failure["source"] == "github"
+    ]
+
+    assert github_failures == []
