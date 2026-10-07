@@ -1,18 +1,52 @@
-import os
-
 from app.workflow.github_collector import github_collector
 
 
-def test_github_collector():
+class FakeTool:
 
-    state = {
-        "project": os.getenv(
-            "GITHUB_REPO",
-            "enterprise-ai-operations-platform",
-        )
-    }
+    def __init__(self, result):
+        self.result = result
 
-    result = github_collector(state)
+    def invoke(self, args):
+        return self.result
+
+
+def test_github_collector(monkeypatch):
+
+    monkeypatch.setattr(
+        "app.workflow.github_collector.get_repository_issues",
+        FakeTool(
+            {
+                "open_issues": 0,
+            }
+        ),
+    )
+
+    monkeypatch.setattr(
+        "app.workflow.github_collector.get_recent_commits",
+        FakeTool(
+            {
+                "latest_commit_sha": "test-sha",
+                "latest_commit_message": "Test commit",
+                "latest_commit_author": "test-author",
+                "latest_commit_date": "2026-08-11T00:00:00Z",
+            }
+        ),
+    )
+
+    monkeypatch.setattr(
+        "app.workflow.github_collector.get_deployment_status",
+        FakeTool(
+            {
+                "deployment_status": "success",
+            }
+        ),
+    )
+
+    result = github_collector(
+        {
+            "project": "enterprise-ai-operations-platform",
+        }
+    )
 
     print("\nCollector result:")
     print(result)
@@ -22,11 +56,17 @@ def test_github_collector():
     github_data = result["github_data"]
 
     assert github_data["repository"]
-    assert isinstance(github_data["repository"], str)
 
-    assert "open_issues" in github_data
-    assert "latest_commit_sha" in github_data
-    assert "latest_commit_message" in github_data
-    assert "latest_commit_author" in github_data
-    assert "latest_commit_date" in github_data
-    assert "deployment_status" in github_data
+    assert isinstance(
+        github_data["repository"],
+        str,
+    )
+
+    assert github_data["open_issues"] == 0
+
+    assert github_data["latest_commit_sha"] == "test-sha"
+    assert github_data["latest_commit_message"] == "Test commit"
+    assert github_data["latest_commit_author"] == "test-author"
+    assert github_data["latest_commit_date"] == "2026-08-11T00:00:00Z"
+
+    assert github_data["deployment_status"] == "success"

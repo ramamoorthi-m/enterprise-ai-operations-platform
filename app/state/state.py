@@ -13,7 +13,8 @@ class EnterpriseState(TypedDict, total=False):
     doc_data: dict[str, Any]
     slack_data: dict[str, Any]
 
-    findings:list[dict[str, Any]]
+    findings: list[str]
+    evidence:list[dict[str, Any]]
     analysis: dict[str, Any]
     report: str
     confidence: float

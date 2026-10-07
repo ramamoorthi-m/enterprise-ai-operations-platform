@@ -29,6 +29,11 @@ class EvaluatorAgent:
             [],
         )
 
+        evidence = state.get(
+            "evidence",
+            [],
+        )
+
         plan = state.get(
             "plan",
             [],
@@ -109,6 +114,11 @@ INVESTIGATION HISTORY
 {json.dumps(investigation_history, indent=2, default=str)}
 
 ============================================================
+NORMALIZED EVIDENCE
+============================================================
+
+{json.dumps(evidence, indent=2, default=str)}
+============================================================
 EVALUATION RULES
 ============================================================
 
@@ -163,6 +173,17 @@ EVALUATION RULES
     not confidence that every possible data source was checked.
 
 15. Do not invent evidence.
+
+16. In normalized evidence, only records with status "success"
+    represent collected evidence.
+
+17. Records with status "failed" represent unsuccessful attempts
+    and must not be treated as factual evidence.
+
+18. Distinguish between:
+    - a source being attempted,
+    - a source successfully returning evidence,
+    - and a source returning an error.
 
 ============================================================
 DECISION GUIDANCE

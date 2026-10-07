@@ -1,25 +1,58 @@
+from typing import Any
+
 from app.state.state import EnterpriseState
 
 
-def aggregator(state: EnterpriseState):
-    """Aggregate evidence collected during the investigation."""
+def _build_evidence_item(
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalize one tool execution into a stable evidence record."""
 
-    findings = list(state.get("findings", []))
+    tool_name = item.get("tool", "")
+    result = item.get("result")
 
-    github_data = state.get("github_data", {})
-    jira_data = state.get("jira_data", {})
+    status = "success"
 
-    if github_data:
-        findings.append(
-            f"GitHub: {github_data}"
-        )
+    if isinstance(result, dict) and result.get("error"):
+        status = "failed"
 
-    if jira_data:
-        findings.append(
-            f"Jira: {jira_data}"
-        )
+    source = "unknown"
+
+    if tool_name.startswith("github_"):
+        source = "github"
+    elif tool_name.startswith("jira_"):
+        source = "jira"
 
     return {
+        "iteration": item.get("iteration"),
+        "source": source,
+        "tool": tool_name,
+        "arguments": item.get("arguments", {}),
+        "status": status,
+        "result": result,
+    }
+
+
+def aggregator(state: EnterpriseState):
+    """Normalize investigation history into structured evidence."""
+
+    history = state.get(
+        "investigation_history",
+        [],
+    )
+
+    evidence = [
+        _build_evidence_item(item)
+        for item in history
+    ]
+
+    findings = state.get(
+        "findings",
+        [],
+    )
+
+    return {
+        "evidence": evidence,
         "findings": findings,
         "status": "evidence_collected",
     }

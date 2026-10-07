@@ -1,25 +1,114 @@
 import pytest
+
 from app.workflow.graph import graph
 from app.llm.client import GeminiClient
+from app.llm.groq_client import GroqClient
 
+
+# ------------------------------------------------------------------
+# Fake MCP clients
+# ------------------------------------------------------------------
+
+
+class FakeGitHubClient:
+
+    async def connect(self):
+        pass
+
+    async def close(self):
+        pass
+
+    async def get_repository_issues(self, repository):
+        return {
+            "repository": repository,
+            "open_issues": 0,
+        }
+
+    async def get_recent_commits(self, repository):
+        return {
+            "repository": repository,
+            "latest_commit_sha": "test-sha",
+            "latest_commit_message": "Test commit",
+            "latest_commit_author": "test-author",
+            "latest_commit_date": "2026-08-11T00:00:00Z",
+        }
+
+    async def get_deployment_status(self, repository):
+        return {
+            "repository": repository,
+            "deployment_status": "success",
+        }
+
+
+class FakeJiraClient:
+
+    async def connect(self):
+        pass
+
+    async def close(self):
+        pass
+
+    async def get_open_tasks(self, project):
+        return {
+            "project": project,
+            "open_tasks": [],
+        }
+
+    async def get_blocked_tasks(self, project):
+        return {
+            "project": project,
+            "blocked_tasks": [],
+        }
+
+    async def get_overdue_tasks(self, project):
+        return {
+            "project": project,
+            "overdue_tasks": [
+                {
+                    "key": "SCRUM-101",
+                    "summary": "Delayed task",
+                }
+            ],
+        }
+
+    async def get_current_sprint(self, project):
+        return {
+            "project": project,
+            "sprint": "Sprint 1",
+        }
+
+
+# ------------------------------------------------------------------
+# Fake Gemini generation
+# ------------------------------------------------------------------
 
 
 def fake_generate(self, prompt: str) -> str:
     return """
+    # Enterprise Project Investigation Report
+
+    ## Investigation Request
+    Analyze the current project status and identify potential delivery blockers.
+
+    ## Executive Summary
     The investigation identified outstanding Jira work and recent
     GitHub development activity.
 
+    ## Key Findings
     GitHub:
     Recent development activity was detected in the repository.
 
     Jira:
     Outstanding work was detected in the SCRUM project.
 
-    Root Cause:
+    ## Risks
     Outstanding Jira work requires attention.
 
-    Recommended Actions:
-    Review and prioritize the outstanding Jira work.
+    ## Evidence Gaps
+    No major evidence gaps identified.
+
+    ## Confidence
+    High confidence based on the collected evidence.
     """
 
 
@@ -62,6 +151,12 @@ def fake_generate_structured(self, prompt: str, response_schema):
         elif name == "human_review_required":
             data[name] = False
 
+        elif name == "evidence_sufficient":
+            data[name] = True
+
+        elif name == "retry_required":
+            data[name] = False
+
         elif name in ("findings", "sources"):
             data[name] = [
                 "Jira contains outstanding work.",
@@ -95,17 +190,20 @@ def fake_generate_structured(self, prompt: str, response_schema):
 
 
 class FakeFunctionCall:
+
     def __init__(self, name, args=None):
         self.name = name
         self.args = args or {}
 
 
 class FakeCandidate:
+
     def __init__(self):
         self.content = "Investigation completed."
 
 
 class FakeToolResponse:
+
     def __init__(self, function_calls=None, text=""):
         self.function_calls = function_calls or []
         self.text = text
@@ -116,10 +214,16 @@ class FakeToolResponse:
 # Fake Gemini tool calling
 # ------------------------------------------------------------------
 
+
 _tool_call_count = 0
 
 
-def fake_generate_with_tools(self, contents, tools, force_tool_call=False,):
+def fake_generate_with_tools(
+    self,
+    contents,
+    tools,
+    force_tool_call=False,
+):
     """
     Fake Gemini tool-calling response.
 
@@ -146,7 +250,10 @@ def fake_generate_with_tools(self, contents, tools, force_tool_call=False,):
                 FakeFunctionCall(
                     name="github_get_recent_commits",
                     args={
-                        "repository": "ramamoorthi-m/enterprise-ai-operations-platform"
+                        "repository": (
+                            "ramamoorthi-m/"
+                            "enterprise-ai-operations-platform"
+                        )
                     },
                 ),
             ],
@@ -170,35 +277,76 @@ def fake_generate_with_tools(self, contents, tools, force_tool_call=False,):
 # Enterprise workflow test
 # ------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enterprise_workflow(monkeypatch):
 
     global _tool_call_count
     _tool_call_count = 0
 
-    # Mock normal Gemini generation.
+    # --------------------------------------------------------------
+    # Mock MCP clients
+    # --------------------------------------------------------------
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.GitHubMCPClient",
+        FakeGitHubClient,
+    )
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.JiraMCPClient",
+        FakeJiraClient,
+    )
+
+    # --------------------------------------------------------------
+    # Mock normal Gemini generation
+    # --------------------------------------------------------------
+
     monkeypatch.setattr(
         GeminiClient,
         "generate",
         fake_generate,
     )
 
-    # Mock structured Gemini generation.
+    # --------------------------------------------------------------
+    # Mock structured Gemini generation
+    # --------------------------------------------------------------
+
     monkeypatch.setattr(
         GeminiClient,
         "generate_structured",
         fake_generate_structured,
     )
 
-    # Mock Gemini tool calling.
+    # --------------------------------------------------------------
+    # Mock structured Groq generation
+    # --------------------------------------------------------------
+
+    monkeypatch.setattr(
+        GroqClient,
+        "generate_structured",
+        fake_generate_structured,
+    )
+
+    # --------------------------------------------------------------
+    # Mock Gemini tool calling
+    # --------------------------------------------------------------
+
     monkeypatch.setattr(
         GeminiClient,
         "generate_with_tools",
         fake_generate_with_tools,
     )
 
+    # --------------------------------------------------------------
+    # Initial workflow state
+    # --------------------------------------------------------------
+
     initial_state = {
-        "user_query": "Analyze the current project status and identify potential delivery blockers.",
+        "user_query": (
+            "Analyze the current project status and "
+            "identify potential delivery blockers."
+        ),
 
         "project": "SCRUM",
 
@@ -213,11 +361,20 @@ async def test_enterprise_workflow(monkeypatch):
 
         "findings": [],
 
+        "evidence": [],
+
+        "investigation_history": [],
+        "investigation_iteration": 0,
+        "max_investigation_iterations": 5,
+        "investigation_complete": False,
+
         "report": "",
 
         "confidence": 0.0,
 
         "human_review_required": False,
+        "human_review_decision": "",
+        "human_review_reason": "",
 
         "errors": [],
 
@@ -227,7 +384,12 @@ async def test_enterprise_workflow(monkeypatch):
 
         "retry_count": 0,
         "max_retries": 2,
+        "retry_required": False,
     }
+
+    # --------------------------------------------------------------
+    # Run complete LangGraph workflow
+    # --------------------------------------------------------------
 
     result = await graph.ainvoke(
         initial_state,
@@ -241,13 +403,60 @@ async def test_enterprise_workflow(monkeypatch):
     print("\nFINAL STATE:")
     print(result)
 
+    # --------------------------------------------------------------
+    # Workflow assertions
+    # --------------------------------------------------------------
+
     assert result["status"] == "report_generated"
+
     assert result["report"]
+
     assert result["findings"]
 
     assert result["evaluation_passed"] is True
+
     assert result["confidence"] > 0
+
     assert result["required_sources"]
 
-    assert "GitHub" in result["report"]
-    assert "Jira" in result["report"]
+    # --------------------------------------------------------------
+    # Evidence contract assertions
+    # --------------------------------------------------------------
+
+    assert result["evidence"]
+
+    successful_evidence = [
+        item
+        for item in result["evidence"]
+        if item["status"] == "success"
+    ]
+
+    assert len(successful_evidence) == 4
+
+    evidence_tools = {
+        item["tool"]
+        for item in successful_evidence
+    }
+
+    assert "jira_get_overdue_tasks" in evidence_tools
+    assert "github_get_recent_commits" in evidence_tools
+
+    # --------------------------------------------------------------
+    # Report assertions
+    # --------------------------------------------------------------
+
+    report = result["report"]
+
+    assert report
+
+    required_sections = [
+        "## Investigation Request",
+        "## Executive Summary",
+        "## Key Findings",
+        "## Risks",
+        "## Evidence Gaps",
+        "## Confidence",
+    ]
+
+    for section in required_sections:
+        assert section in report

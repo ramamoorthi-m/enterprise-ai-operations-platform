@@ -614,6 +614,17 @@ the investigation plan.
                 "",
             )
 
+            result = item.get("result")
+
+            # A tool attempt is not automatically successful evidence.
+            # Failed tool calls must not satisfy required-source checks.
+            if (
+                isinstance(result, dict)
+                and result.get("error")
+            ):
+              continue
+              
+
             if tool_name.startswith("jira_"):
                 executed_sources.add("jira")
 

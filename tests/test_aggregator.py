@@ -1,27 +1,36 @@
-import os
-
 from app.workflow.aggregator import aggregator
 
 
-def test_aggregator():
-
-    repository = (
-        f"{os.getenv('GITHUB_OWNER')}/"
-        f"{os.getenv('GITHUB_REPO')}"
-    )
+def test_aggregator_normalizes_investigation_history():
 
     state = {
-        "findings": [],
-        "github_data": {
-            "repository": repository,
-            "open_issues": 0,
-            "latest_commit_sha": "test-sha",
-            "latest_commit_message": "Test commit",
-            "latest_commit_author": "test-author",
-            "latest_commit_date": "2026-08-11T00:00:00Z",
-            "deployment_status": "no_workflow_runs_found",
-        },
-        "jira_data": {},
+        "findings": [
+            "Jira contains overdue work."
+        ],
+        "investigation_history": [
+            {
+                "iteration": 1,
+                "tool": "github_get_recent_commits",
+                "arguments": {
+                    "repository": "ramamoorthi-m/enterprise-ai-operations-platform"
+                },
+                "result": {
+                    "latest_commit_sha": "test-sha",
+                    "latest_commit_message": "Test commit",
+                },
+            },
+            {
+                "iteration": 1,
+                "tool": "jira_get_overdue_tasks",
+                "arguments": {
+                    "project": "SCRUM"
+                },
+                "result": {
+                    "project": "SCRUM",
+                    "overdue_tasks": [],
+                },
+            },
+        ],
     }
 
     result = aggregator(state)
@@ -31,6 +40,18 @@ def test_aggregator():
 
     assert result["status"] == "evidence_collected"
 
-    assert len(result["findings"]) == 1
-    assert "GitHub:" in result["findings"][0]
-    assert repository in result["findings"][0]
+    assert len(result["evidence"]) == 2
+
+    github_evidence = result["evidence"][0]
+    assert github_evidence["source"] == "github"
+    assert github_evidence["tool"] == "github_get_recent_commits"
+    assert github_evidence["status"] == "success"
+
+    jira_evidence = result["evidence"][1]
+    assert jira_evidence["source"] == "jira"
+    assert jira_evidence["tool"] == "jira_get_overdue_tasks"
+    assert jira_evidence["status"] == "success"
+
+    assert result["findings"] == [
+        "Jira contains overdue work."
+    ]

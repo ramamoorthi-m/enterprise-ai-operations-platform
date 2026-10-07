@@ -1,10 +1,39 @@
-from app.tools.github_tools import get_repository_issues
+from app.tools import github_tools
 
 
-repository = "ramamoorthi-m/enterprise-ai-operations-platform"
+class FakeResponse:
+    def raise_for_status(self):
+        pass
 
-result = get_repository_issues.invoke({
-    "repository": repository
-})
+    def json(self):
+        return [
+            {
+                "number": 101,
+                "title": "Fix authentication issue",
+            },
+            {
+                "number": 102,
+                "title": "Improve agent workflow",
+            },
+        ]
 
-print(result)
+
+def fake_get(*args, **kwargs):
+    return FakeResponse()
+
+
+def test_get_repository_issues(monkeypatch):
+    monkeypatch.setattr(
+        github_tools.requests,
+        "get",
+        fake_get,
+    )
+
+    result = github_tools.get_repository_issues.invoke({
+        "repository": "ramamoorthi-m/enterprise-ai-operations-platform"
+    })
+
+    assert result["repository"] == (
+        "ramamoorthi-m/enterprise-ai-operations-platform"
+    )
+    assert result["open_issues"] == 2

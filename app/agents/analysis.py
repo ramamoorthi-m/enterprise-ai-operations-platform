@@ -75,6 +75,9 @@ INVESTIGATION HISTORY:
 CURRENT FINDINGS:
 {state.get("findings", [])}
 
+EVIDENCE:
+{state.get("evidence", [])}
+
 ANALYSIS RULES:
 
 1. Base every conclusion on the supplied evidence.
@@ -89,6 +92,8 @@ ANALYSIS RULES:
 9. Assign confidence between 0.0 and 1.0 based on evidence quality.
 10. Keep the assessment concise and evidence-grounded.
 11. Do not generate the final operational report.
+12. Treat evidence records with status "failed" as failed tool attempts, not as factual evidence.
+13. Do not use failed tool results to support conclusions. 
 
 Return only the structured AnalysisResult.
 """
