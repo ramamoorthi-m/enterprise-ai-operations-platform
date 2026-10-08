@@ -7,6 +7,7 @@ def planner(state: EnterpriseState):
     """Generate or revise an investigation plan using Gemini."""
 
     user_query = state["user_query"]
+    memory_context = state.get("memory_context", [])
 
     retry_count = state.get("retry_count", 0)
 
@@ -14,6 +15,22 @@ def planner(state: EnterpriseState):
     previous_findings = state.get("findings", [])
     previous_analysis = state.get("analysis", {})
     previous_errors = state.get("errors", [])
+
+    if memory_context:
+        memory_context_text = "\n".join(
+            (
+                f"- [{memory['memory_type']}] "
+                f"{memory['content']} "
+                f"(source: {memory['source']}, "
+                f"confidence: {memory['confidence']}, "
+                f"importance: {memory['importance']})"
+            )
+            for memory in memory_context
+        )
+    else:
+        memory_context_text = (
+            "No persistent business memory is available."
+        )
 
     is_retry = retry_count > 0
 
@@ -53,7 +70,8 @@ Retry rules:
         retry_context = """
 This is the first investigation attempt.
 
-Create the initial investigation plan based only on the user's request.
+Create the initial investigation plan based on the user's request
+and relevant persistent business memory.
 """
 
     prompt = f"""
@@ -63,6 +81,18 @@ Analyze the user's request and create an investigation plan.
 
 Your job is to determine WHAT evidence needs to be collected.
 You do not execute tools yourself.
+
+PERSISTENT BUSINESS MEMORY:
+
+The following information was retained from previous workflow
+executions for this project.
+
+Use it as contextual business knowledge when relevant.
+Do not blindly trust it.
+Do not treat memory as fresh evidence.
+If current evidence conflicts with memory, prefer current evidence.
+
+{memory_context_text}
 
 AVAILABLE ENTERPRISE SYSTEMS AND CAPABILITIES:
 
@@ -103,7 +133,6 @@ IMPORTANT CAPABILITY LIMITS:
 - There is currently NO Jira high-priority-specific tool.
 - There is currently NO Jira in-progress-specific tool.
 - Do not create investigation tasks that require unavailable capabilities.
-- Use the available tools that can reasonably provide the required evidence.
 - For information that can be obtained through an available broader
   tool, use that tool instead of inventing a new capability.
 

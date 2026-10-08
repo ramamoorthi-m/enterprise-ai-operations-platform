@@ -2,6 +2,9 @@ from typing import TypedDict, Any
 class EnterpriseState(TypedDict, total=False):
     user_query: str
     project: str
+    memory_context: list[dict[str, Any]]
+    memory_write_status: str
+    memory_write_count: int
     plan: list[dict[str, str]]
     required_sources: list[str]
 
