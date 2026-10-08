@@ -4,6 +4,7 @@ from typing import Any
 CONNECTION_FAILURE = "connection_failure"
 TOOL_EXECUTION_FAILURE = "tool_execution_failure"
 INVALID_TOOL_CALL = "invalid_tool_call"
+GUARDRAIL_BLOCKED = "guardrail_blocked"
 
 
 def build_failure(

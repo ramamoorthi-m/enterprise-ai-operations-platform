@@ -2,430 +2,267 @@ import pytest
 
 from app.llm.client import GeminiClient
 from app.llm.groq_client import GroqClient
-from app.mcp.github_client import GitHubMCPClient
-from app.mcp.jira_client import JiraMCPClient
 from app.workflow.graph import graph
+from app.state.analysis import AnalysisResult
+from app.state.plan import InvestigationPlan
+from app.mcp.jira_client import JiraMCPClient
+from app.mcp.github_client import GitHubMCPClient
 
-
-# ============================================================
-# Fake Gemini response objects
-# ============================================================
-
-class FakeFunctionCall:
-    def __init__(self, name, args=None):
-        self.name = name
-        self.args = args or {}
-
-
-class FakeCandidate:
-    def __init__(self):
-        self.content = "Tool call requested."
-
-
-class FakeToolResponse:
-    def __init__(self, function_calls=None, text=""):
-        self.function_calls = function_calls or []
-        self.text = text
-        self.candidates = [FakeCandidate()]
-
-
-# ============================================================
-# Track investigation attempts
-# ============================================================
 
 class FakeRetryTracker:
-
     planner_calls = 0
     investigation_calls = 0
     evaluator_calls = 0
     github_calls = 0
     jira_calls = 0
 
-    @classmethod
-    def reset(cls):
-        cls.planner_calls = 0
-        cls.investigation_calls = 0
-        cls.evaluator_calls = 0
-        cls.github_calls = 0
-        cls.jira_calls = 0
 
+class FakeFunctionCall:
+    def __init__(self, name, args):
+        self.name = name
+        self.args = args
 
-# ============================================================
-# Fake MCP connections
-# ============================================================
+class FakeToolResponse:
+    def __init__(
+        self,
+        function_calls=None,
+        text="",
+    ):
+        self.function_calls = function_calls or []
+        self.text = text
 
-async def fake_connect(self):
-    return None
+        parts = []
 
-
-async def fake_close(self):
-    return None
-
-
-# ============================================================
-# Fake Jira MCP methods
-# ============================================================
-
-async def fake_get_overdue_tasks(self, project):
-    FakeRetryTracker.jira_calls += 1
-
-    return {
-        "project": project,
-        "overdue_tasks": 1,
-    }
-
-
-async def fake_get_open_tasks(self, project):
-    FakeRetryTracker.jira_calls += 1
-
-    return {
-        "project": project,
-        "open_tasks": 5,
-    }
-
-
-async def fake_get_blocked_tasks(self, project):
-    FakeRetryTracker.jira_calls += 1
-
-    return {
-        "project": project,
-        "blocked_tasks": 0,
-    }
-
-
-async def fake_get_current_sprint(self, project):
-    FakeRetryTracker.jira_calls += 1
-
-    return {
-        "project": project,
-        "sprint": "Sprint 10",
-    }
-
-
-# ============================================================
-# Fake GitHub MCP methods
-# ============================================================
-
-async def fake_get_recent_commits(self, repository):
-    FakeRetryTracker.github_calls += 1
-
-    return {
-        "repository": repository,
-        "latest_commit_sha": "abc123",
-        "latest_commit_message": "Fix production issue",
-    }
-
-
-async def fake_get_deployment_status(self, repository):
-    FakeRetryTracker.github_calls += 1
-
-    return {
-        "repository": repository,
-        "deployment_status": "success",
-    }
-
-
-async def fake_get_repository_issues(self, repository):
-    FakeRetryTracker.github_calls += 1
-
-    return {
-        "repository": repository,
-        "open_issues": 0,
-    }
-
-
-# ============================================================
-# Fake Gemini structured generation
-# ============================================================
-
-def fake_generate_structured(
-    self,
-    prompt,
-    response_schema,
-):
-    schema_name = response_schema.__name__
-
-    # --------------------------------------------------------
-    # Planner
-    # --------------------------------------------------------
-
-    if schema_name == "InvestigationPlan":
-
-        FakeRetryTracker.planner_calls += 1
-
-        # FIRST planner attempt
-        if FakeRetryTracker.planner_calls == 1:
-
-            return response_schema.model_validate({
-                "project": "SCRUM",
-                "goal": (
-                    "Analyze the current project status "
-                    "and identify potential delivery blockers."
-                ),
-                "tasks": [
+        for function_call in self.function_calls:
+            parts.append(
+                type(
+                    "FakePart",
+                    (),
                     {
-                        "description": (
-                            "Find overdue Jira issues "
-                            "and blocked tasks"
-                        ),
-                        "source": "jira",
+                        "function_call": function_call,
                     },
+                )()
+            )
+
+        self.candidates = [
+            type(
+                "FakeCandidate",
+                (),
+                {
+                    "content": type(
+                        "FakeContent",
+                        (),
+                        {
+                            "parts": parts,
+                        },
+                    )()
+                },
+            )()
+        ]
+
+def reset_tracker():
+    FakeRetryTracker.planner_calls = 0
+    FakeRetryTracker.investigation_calls = 0
+    FakeRetryTracker.evaluator_calls = 0
+    FakeRetryTracker.github_calls = 0
+    FakeRetryTracker.jira_calls = 0
+
+
+@pytest.mark.asyncio
+async def test_workflow_retry_and_replanning(monkeypatch):
+    reset_tracker()
+
+    # =========================================================
+    # Fake MCP lifecycle
+    #
+    # The real MCP servers must NOT be contacted during tests.
+    # =========================================================
+
+    async def fake_jira_connect(self):
+        return None
+
+    async def fake_jira_close(self):
+        return None
+
+    async def fake_github_connect(self):
+        return None
+
+    async def fake_github_close(self):
+        return None
+
+    monkeypatch.setattr(
+        JiraMCPClient,
+        "connect",
+        fake_jira_connect,
+    )
+
+    monkeypatch.setattr(
+        JiraMCPClient,
+        "close",
+        fake_jira_close,
+    )
+
+    monkeypatch.setattr(
+        GitHubMCPClient,
+        "connect",
+        fake_github_connect,
+    )
+
+    monkeypatch.setattr(
+        GitHubMCPClient,
+        "close",
+        fake_github_close,
+    )
+
+    # =========================================================
+    # Fake structured LLM responses
+    # =========================================================
+
+    def fake_generate_structured(
+        self,
+        prompt,
+        response_schema,
+    ):
+        schema_name = getattr(
+            response_schema,
+            "__name__",
+            "",
+        )
+
+        # -----------------------------------------------------
+        # Planner
+        # -----------------------------------------------------
+        if schema_name == "InvestigationPlan":
+            FakeRetryTracker.planner_calls += 1
+
+            # First planning attempt
+            if FakeRetryTracker.planner_calls == 1:
+                return InvestigationPlan(
+                    project="SCRUM",
+                    goal=(
+                        "Analyze the current project status "
+                        "and identify potential delivery blockers."
+                    ),
+                    tasks=[
+                        {
+                            "description": (
+                                "Find overdue Jira issues "
+                                "and blocked tasks"
+                            ),
+                            "source": "jira",
+                        },
+                        {
+                            "description": (
+                                "Inspect GitHub deployment status"
+                            ),
+                            "source": "github",
+                        },
+                    ],
+                    required_sources=[
+                        "jira",
+                        "github",
+                    ],
+                )
+
+            # -------------------------------------------------
+            # Retry planning attempt
+            #
+            # The first investigation failed to collect the
+            # required GitHub evidence.
+            #
+            # The replanner therefore focuses only on GitHub.
+            # -------------------------------------------------
+            return InvestigationPlan(
+                project="SCRUM",
+                goal="Collect missing deployment evidence.",
+                tasks=[
                     {
                         "description": (
                             "Inspect GitHub deployment status"
                         ),
                         "source": "github",
-                    },
+                    }
                 ],
-                "required_sources": [
-                    "jira",
-                    "github",
-                ],
-            })
-
-        # SECOND planner attempt after retry
-        return response_schema.model_validate({
-            "project": "SCRUM",
-            "goal": (
-                "Collect the missing GitHub deployment evidence."
-            ),
-            "tasks": [
-                {
-                    "description": (
-                        "Inspect GitHub deployment status"
-                    ),
-                    "source": "github",
-                },
-            ],
-            "required_sources": [
-                "github",
-            ],
-        })
-
-    # --------------------------------------------------------
-    # Evaluator
-    # --------------------------------------------------------
-
-    if schema_name == "EvaluatorResult":
-
-        FakeRetryTracker.evaluator_calls += 1
-
-        # FIRST evaluation:
-        # GitHub evidence is missing.
-        if FakeRetryTracker.evaluator_calls == 1:
-
-            return response_schema.model_validate({
-                "evaluation_passed": False,
-                "confidence": 0.45,
-                "reason": (
-                    "GitHub deployment evidence required "
-                    "by the investigation plan was not collected."
-                ),
-                "evidence_sufficient": False,
-                "retry_required": True,
-                "human_review_required": False,
-            })
-
-        # SECOND evaluation:
-        # GitHub evidence is now present.
-        return response_schema.model_validate({
-            "evaluation_passed": True,
-            "confidence": 0.92,
-            "reason": (
-                "Required GitHub deployment evidence "
-                "was collected successfully."
-            ),
-            "evidence_sufficient": True,
-            "retry_required": False,
-            "human_review_required": False,
-        })
-
-    # --------------------------------------------------------
-    # Other structured agents
-    # --------------------------------------------------------
-
-    fields = response_schema.model_fields
-    data = {}
-
-    for name, field in fields.items():
-
-        if name == "summary":
-            data[name] = "Investigation evidence was collected."
-
-        elif name == "key_findings":
-            data[name] = [
-                "Jira contains one overdue task.",
-                "GitHub deployment status is available.",
-            ]
-
-        elif name == "risks":
-            data[name] = []
-
-        elif name == "evidence_gaps":
-            data[name] = []
-
-        elif name == "confidence":
-            data[name] = 0.90
-
-        elif name == "assessment":
-            data[name] = (
-                "Evidence is sufficient."
+                required_sources=["github"],
             )
 
-        elif field.annotation is str:
-            data[name] = "Investigation completed."
+        # -----------------------------------------------------
+        # Evaluator
+        # -----------------------------------------------------
+        if schema_name == "EvaluatorResult":
+            FakeRetryTracker.evaluator_calls += 1
 
-        elif field.annotation is bool:
-            data[name] = False
+            # First evaluation:
+            # insufficient evidence -> retry.
+            if FakeRetryTracker.evaluator_calls == 1:
+                return {
+                    "evaluation_passed": False,
+                    "confidence": 0.45,
+                    "reason": (
+                        "The investigation is incomplete because "
+                        "GitHub deployment evidence is missing."
+                    ),
+                    "evidence_sufficient": False,
+                    "retry_required": True,
+                    "human_review_required": False,
+                }
 
-        elif field.annotation is float:
-            data[name] = 0.90
+            # Second evaluation:
+            # GitHub evidence is now available.
+            return {
+                "evaluation_passed": True,
+                "confidence": 0.9,
+                "reason": (
+                    "The required GitHub deployment evidence "
+                    "was collected successfully."
+                ),
+                "evidence_sufficient": True,
+                "retry_required": False,
+                "human_review_required": False,
+            }
 
-        elif field.annotation is int:
-            data[name] = 0
+        # -----------------------------------------------------
+        # Analysis
+        # -----------------------------------------------------
+        if schema_name == "AnalysisResult":
+            return AnalysisResult(
+                summary=(
+                    "The investigation collected the required "
+                    "deployment evidence."
+                ),
+                key_findings=[
+                    "GitHub deployment status was retrieved."
+                ],
+                risks=[],
+                evidence_gaps=[],
+                confidence=0.85,
+                assessment=(
+                    "The available evidence is sufficient to assess "
+                    "the current project status."
+                ),
+            )
 
-        elif "list" in str(field.annotation).lower():
-            data[name] = []
-
-        elif "dict" in str(field.annotation).lower():
-            data[name] = {}
-
-    return response_schema.model_validate(data)
-
-
-# ============================================================
-# Fake Gemini tool calling
-# ============================================================
-
-def fake_generate_with_tools(
-    self,
-    contents,
-    tools,
-    force_tool_call=False,
-):
-    """
-    Simulate two separate InvestigationAgent executions.
-
-    Investigation #1:
-        Jira tool -> finish
-
-    Investigation #2:
-        GitHub deployment tool -> finish
-    """
-
-    FakeRetryTracker.investigation_calls += 1
-
-    # --------------------------------------------------------
-    # First investigation
-    # --------------------------------------------------------
-
-    if FakeRetryTracker.investigation_calls == 1:
-
-        return FakeToolResponse(
-            function_calls=[
-                FakeFunctionCall(
-                    name="jira_get_overdue_tasks",
-                    args={
-                        "project": "SCRUM",
-                    },
+        # -----------------------------------------------------
+        # Report
+        # -----------------------------------------------------
+        if schema_name == "ReportResult":
+            return {
+                "report": (
+                    "The project investigation completed "
+                    "successfully after retrying the missing "
+                    "GitHub evidence collection."
                 )
-            ]
+            }
+
+        raise AssertionError(
+            f"Unexpected structured schema: {schema_name}"
         )
 
-    # --------------------------------------------------------
-    # Second call belongs to the SAME investigation.
-    # Finish first investigation.
-    # --------------------------------------------------------
-
-    if FakeRetryTracker.investigation_calls == 2:
-
-        return FakeToolResponse(
-            function_calls=[],
-            text=(
-                "Jira investigation completed, "
-                "but GitHub evidence was not collected."
-            ),
-        )
-
-    # --------------------------------------------------------
-    # Third call = second investigation attempt
-    # --------------------------------------------------------
-
-    if FakeRetryTracker.investigation_calls == 3:
-
-        return FakeToolResponse(
-            function_calls=[
-                FakeFunctionCall(
-                    name="github_get_deployment_status",
-                    args={
-                        "repository": (
-                            "ramamoorthi-m/"
-                            "enterprise-ai-operations-platform"
-                        ),
-                    },
-                )
-            ]
-        )
-
-    # --------------------------------------------------------
-    # Fourth call = finish second investigation
-   # --------------------------------------------------------
-
-    return FakeToolResponse(
-        function_calls=[],
-        text=(
-            "GitHub deployment evidence collected. "
-            "Investigation completed."
-        ),
+    monkeypatch.setattr(
+        GroqClient,
+        "generate_structured",
+        fake_generate_structured,
     )
-
-
-# ============================================================
-# Fake normal Gemini generation
-# ============================================================
-
-def fake_generate(self, prompt):
-
-    return (
-        "# Enterprise Project Investigation Report\n\n"
-
-        "## Investigation Request\n"
-        "Project: SCRUM\n"
-        "Analyze the current project status "
-        "and identify potential delivery blockers.\n\n"
-
-        "## Executive Summary\n"
-        "Investigation completed successfully "
-        "after recovering missing GitHub evidence.\n\n"
-
-        "## Key Findings\n"
-        "- Jira contains one overdue task.\n"
-        "- GitHub deployment status is available.\n\n"
-
-        "## Risks\n"
-        "- One overdue Jira task requires attention.\n\n"
-
-        "## Evidence Gaps\n"
-        "- No remaining evidence gaps were identified "
-        "after the retry.\n\n"
-
-        "## Confidence\n"
-        "0.92\n"
-    )
-
-
-# ============================================================
-# Test
-# ============================================================
-
-@pytest.mark.asyncio
-async def test_retry_recovers_missing_evidence(monkeypatch):
-
-    FakeRetryTracker.reset()
-
-    # --------------------------------------------------------
-    # Mock Gemini
-    # --------------------------------------------------------
 
     monkeypatch.setattr(
         GeminiClient,
@@ -433,11 +270,97 @@ async def test_retry_recovers_missing_evidence(monkeypatch):
         fake_generate_structured,
     )
 
-    monkeypatch.setattr(
-        GeminiClient,
-        "generate",
-        fake_generate,
-    )
+    # =========================================================
+    # Fake investigation LLM tool-call generation
+    # =========================================================
+    #
+    # First investigation:
+    #
+    #   LLM call 1
+    #       -> Jira overdue tool
+    #
+    #   Jira tool fails
+    #
+    #   LLM call 2
+    #       -> text response
+    #
+    #   Investigation terminates with errors.
+    #
+    # Retry investigation:
+    #
+    #   LLM call 3
+    #       -> GitHub deployment tool
+    #
+    #   GitHub tool succeeds
+    #
+    #   LLM call 4
+    #       -> completion text
+    #
+    # =========================================================
+
+    def fake_generate_with_tools(
+        self,
+        contents,
+        tools,
+        force_tool_call=False,
+    ):
+        FakeRetryTracker.investigation_calls += 1
+
+        # -----------------------------------------------------
+        # First investigation attempt
+        # -----------------------------------------------------
+        if FakeRetryTracker.investigation_calls == 1:
+            return FakeToolResponse(
+                function_calls=[
+                    FakeFunctionCall(
+                        name="jira_get_overdue_tasks",
+                        args={
+                            "project": "SCRUM",
+                        },
+                    )
+                ]
+            )
+
+        # -----------------------------------------------------
+        # First investigation terminates after Jira failure.
+        # -----------------------------------------------------
+        if FakeRetryTracker.investigation_calls == 2:
+            return FakeToolResponse(
+                function_calls=[],
+                text=(
+                    "Jira investigation failed. "
+                    "GitHub deployment evidence was not collected."
+                ),
+            )
+
+        # -----------------------------------------------------
+        # Retry investigation
+        # -----------------------------------------------------
+        if FakeRetryTracker.investigation_calls == 3:
+            return FakeToolResponse(
+                function_calls=[
+                    FakeFunctionCall(
+                        name="github_get_deployment_status",
+                        args={
+                            "repository": (
+                                "ramamoorthi-m/"
+                                "enterprise-ai-operations-platform"
+                            )
+                        },
+                    )
+                ]
+            )
+
+        # -----------------------------------------------------
+        # Retry investigation completes successfully.
+        # -----------------------------------------------------
+        return FakeToolResponse(
+            function_calls=[],
+            text=(
+                "GitHub deployment evidence collected. "
+                "Investigation completed."
+            ),
+        )
 
     monkeypatch.setattr(
         GeminiClient,
@@ -445,55 +368,69 @@ async def test_retry_recovers_missing_evidence(monkeypatch):
         fake_generate_with_tools,
     )
 
-    monkeypatch.setattr(
-        GroqClient,
-        "generate_structured",
-        fake_generate_structured,
-    )
+    # =========================================================
+    # Fake Jira tool execution
+    #
+    # First Jira call fails intentionally.
+    # =========================================================
 
-    monkeypatch.setattr(
-        GroqClient,
-        "generate",
-        fake_generate,
-    )
+    async def fake_get_overdue_tasks(
+        self,
+        project,
+    ):
+        FakeRetryTracker.jira_calls += 1
 
-    # --------------------------------------------------------
-    # Mock MCP connections
-    # --------------------------------------------------------
-
-    monkeypatch.setattr(
-        JiraMCPClient,
-        "connect",
-        fake_connect,
-    )
-
-    monkeypatch.setattr(
-        JiraMCPClient,
-        "close",
-        fake_close,
-    )
-
-    monkeypatch.setattr(
-        GitHubMCPClient,
-        "connect",
-        fake_connect,
-    )
-
-    monkeypatch.setattr(
-        GitHubMCPClient,
-        "close",
-        fake_close,
-    )
-
-    # --------------------------------------------------------
-    # Mock Jira MCP operations
-    # --------------------------------------------------------
+        raise RuntimeError(
+            "Simulated Jira connection failure"
+        )
 
     monkeypatch.setattr(
         JiraMCPClient,
         "get_overdue_tasks",
         fake_get_overdue_tasks,
     )
+
+    # ---------------------------------------------------------
+    # This should not be called in the first attempt because
+    # the overdue-task call fails and the investigation exits.
+    # ---------------------------------------------------------
+
+    async def fake_get_blocked_tasks(
+        self,
+        project,
+    ):
+        return {
+            "project": project,
+            "blocked_tasks": 0,
+        }
+
+    monkeypatch.setattr(
+        JiraMCPClient,
+        "get_blocked_tasks",
+        fake_get_blocked_tasks,
+    )
+
+    # ---------------------------------------------------------
+    # Other Jira tools are also made safe for the test.
+    # ---------------------------------------------------------
+
+    async def fake_get_open_tasks(
+        self,
+        project,
+    ):
+        return {
+            "project": project,
+            "open_tasks": 0,
+        }
+
+    async def fake_get_current_sprint(
+        self,
+        project,
+    ):
+        return {
+            "project": project,
+            "sprint": None,
+        }
 
     monkeypatch.setattr(
         JiraMCPClient,
@@ -503,25 +440,24 @@ async def test_retry_recovers_missing_evidence(monkeypatch):
 
     monkeypatch.setattr(
         JiraMCPClient,
-        "get_blocked_tasks",
-        fake_get_blocked_tasks,
-    )
-
-    monkeypatch.setattr(
-        JiraMCPClient,
         "get_current_sprint",
         fake_get_current_sprint,
     )
 
-    # --------------------------------------------------------
-    # Mock GitHub MCP operations
-    # --------------------------------------------------------
+    # =========================================================
+    # Fake GitHub deployment tool execution
+    # =========================================================
 
-    monkeypatch.setattr(
-        GitHubMCPClient,
-        "get_recent_commits",
-        fake_get_recent_commits,
-    )
+    async def fake_get_deployment_status(
+        self,
+        repository,
+    ):
+        FakeRetryTracker.github_calls += 1
+
+        return {
+            "repository": repository,
+            "deployment_status": "success",
+        }
 
     monkeypatch.setattr(
         GitHubMCPClient,
@@ -529,81 +465,85 @@ async def test_retry_recovers_missing_evidence(monkeypatch):
         fake_get_deployment_status,
     )
 
-    monkeypatch.setattr(GitHubMCPClient,
+    # ---------------------------------------------------------
+    # Make other GitHub tools safe as well.
+    # ---------------------------------------------------------
+
+    async def fake_get_repository_issues(
+        self,
+        repository,
+    ):
+        return {
+            "repository": repository,
+            "issues": [],
+        }
+
+    async def fake_get_recent_commits(
+        self,
+        repository,
+    ):
+        return {
+            "repository": repository,
+            "commits": [],
+        }
+
+    monkeypatch.setattr(
+        GitHubMCPClient,
         "get_repository_issues",
         fake_get_repository_issues,
     )
 
-    # --------------------------------------------------------
-    # Initial state
-    # --------------------------------------------------------
+    monkeypatch.setattr(
+        GitHubMCPClient,
+        "get_recent_commits",
+        fake_get_recent_commits,
+    )
+
+    # =========================================================
+    # Initial workflow state
+    # =========================================================
 
     initial_state = {
         "user_query": (
             "Analyze the current project status "
             "and identify potential delivery blockers."
         ),
-
-        "project": "SCRUM",
-
-        "plan": [],
-        "required_sources": [],
-
-        "github_data": {},
-        "jira_data": {},
-        "doc_data": {},
-        "slack_data": {},
-
-        "findings": [],
-        "report": "",
-
-        "analysis": {},
-
-        "confidence": 0.0,
-        "human_review_required": False,
-
-        "errors": [],
-        "status": "",
-
-        "evaluation_passed": False,
-        "evidence_sufficient": False,
-        "retry_required": False,
-
         "retry_count": 0,
         "max_retries": 2,
+        "failures": [],
+        "errors": [],
+        "findings": [],
+        "investigation_history": [],
+        "investigation_iteration": 0,
     }
 
-    # --------------------------------------------------------
-    # Run workflow
-    # --------------------------------------------------------
+    # =========================================================
+    # Run workflow asynchronously
+    # =========================================================
 
     result = await graph.ainvoke(
         initial_state,
         config={
             "configurable": {
-                "thread_id": "test-retry-recovery",
+                "thread_id": "test-retry-workflow-fresh",
             }
         },
     )
 
-    print("\nRETRY WORKFLOW FINAL STATE:")
+    print("\n===== FINAL RESULT =====")
     print(result)
 
-    # --------------------------------------------------------
-    # Core workflow assertions
-    # --------------------------------------------------------
+    print("\n===== TRACKER =====")
+    print("planner_calls =", FakeRetryTracker.planner_calls)
+    print("evaluator_calls =", FakeRetryTracker.evaluator_calls)
+    print("investigation_calls =", FakeRetryTracker.investigation_calls)
+    print("jira_calls =", FakeRetryTracker.jira_calls)
+    print("github_calls =", FakeRetryTracker.github_calls)
+
+
+
 
     assert result["status"] == "report_generated"
-
-    assert result["evaluation_passed"] is True
-
-    assert result["confidence"] > 0
-
-    assert result["report"]
-
-    # --------------------------------------------------------
-    # Retry actually happened
-    # --------------------------------------------------------
 
     assert result["retry_count"] == 1
 
@@ -611,36 +551,121 @@ async def test_retry_recovers_missing_evidence(monkeypatch):
 
     assert FakeRetryTracker.evaluator_calls == 2
 
-    # --------------------------------------------------------
-    # Jira was investigated
-    # --------------------------------------------------------
+    assert FakeRetryTracker.jira_calls == 1
 
-    assert FakeRetryTracker.jira_calls >= 1
+    assert FakeRetryTracker.github_calls == 1
 
-    # --------------------------------------------------------
-    # GitHub was investigated during retry
-    # --------------------------------------------------------
+    # =========================================================
+    # Verify replanning
+    # =========================================================
 
-    assert FakeRetryTracker.github_calls >= 1
+    assert result["required_sources"] == ["github"]
 
-    assert (
+    assert result["plan"]
+
+    assert all(
+        task["source"] == "github"
+        for task in result["plan"]
+    )
+
+    # =========================================================
+    # Verify investigation history
+    # =========================================================
+
+    history = result["investigation_history"]
+
+    assert len(history) == 2
+
+    # First attempt: Jira failed.
+    assert history[0]["tool"] == (
+        "jira_get_overdue_tasks"
+    )
+
+    assert history[0]["iteration"] == 1
+
+    assert history[0]["result"]["error"]
+
+    # Retry attempt: GitHub succeeded.
+    assert history[1]["tool"] == (
         "github_get_deployment_status"
-        in result["github_data"]
     )
 
-    # --------------------------------------------------------
-    # Final evidence should contain GitHub deployment data
-    # --------------------------------------------------------
+    assert history[1]["iteration"] == 3
+
+    assert not history[1]["result"].get(
+        "error"
+    )
+
+    # =========================================================
+    # Verify failure preservation
+    # =========================================================
+
+    failures = result["failures"]
+
+    assert failures
+
+    jira_failure = next(
+        failure
+        for failure in failures
+        if failure["tool"] == "jira_get_overdue_tasks"
+    )
+
+    assert jira_failure["category"] == (
+        "tool_execution_failure"
+    )
+
+    assert jira_failure["retryable"] is True
+
+    # =========================================================
+    # Verify evidence
+    # =========================================================
+
+    evidence = result["evidence"]
+
+    assert len(evidence) == 2
+
+    assert evidence[0]["source"] == "jira"
+
+    assert evidence[0]["status"] == "failed"
+
+    assert evidence[1]["source"] == "github"
+
+    assert evidence[1]["status"] == "success"
+
+    # =========================================================
+    # Verify final evaluator state
+    # =========================================================
+
+    assert result["evaluation_passed"] is True
+
+    assert result["confidence"] >= 0.0
+
+    assert result["human_review_required"] is False
+
+    assert result["retry_required"] is False
+
+    # =========================================================
+    # Verify global investigation iteration
+    #
+    # First attempt:
+    #   1 -> Jira tool call
+    #   2 -> investigation completion
+    #
+    # Retry:
+    #   3 -> GitHub tool call
+    #   4 -> investigation completion
+    #
+    # =========================================================
+
+    assert result["investigation_iteration"] == 4
+
+    # =========================================================
+    # Verify final report
+    # =========================================================
+
+    assert result["report"]
 
     assert (
-        result["github_data"]
-        ["github_get_deployment_status"]
-        ["deployment_status"]
-        == "success"
+        "GitHub deployment evidence"
+        in result["report"]
     )
-
-    # --------------------------------------------------------
-    # Final workflow succeeded after retry
-    # --------------------------------------------------------
-
-    assert result["investigation_complete"] is True

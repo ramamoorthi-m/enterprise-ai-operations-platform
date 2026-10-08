@@ -6,6 +6,7 @@ from google.genai import types
 
 from app.llm.client import GeminiClient
 from app.errors.failures import (
+    GUARDRAIL_BLOCKED,
     INVALID_TOOL_CALL,
     TOOL_EXECUTION_FAILURE,
     build_failure,
@@ -52,9 +53,25 @@ class InvestigationAgent:
             self._build_prompt(plan, state)
         ]
 
-        history: list[dict[str, Any]] = []
+        # ---------------------------------------------------------
+        # Preserve investigation history across retries.
+        #
+        # A retry is a continuation of the same investigation,
+        # not a brand-new audit trail.
+        # ---------------------------------------------------------
 
-        failures: list[dict[str, Any]] = []
+        history: list[dict[str, Any]] = list(
+            state.get("investigation_history", [])
+        )
+
+        failures: list[dict[str, Any]] = list(
+            state.get("failures", [])
+        )
+
+        previous_investigation_iteration = state.get(
+            "investigation_iteration",
+            0,
+        )
 
         required_sources = set(
             state.get("required_sources", [])
@@ -75,6 +92,12 @@ class InvestigationAgent:
             1,
             self.max_iterations + 1,
         ):
+            # Global investigation iteration across retries.
+            investigation_iteration = (
+                previous_investigation_iteration
+                + iteration
+            )
+
             # -----------------------------------------------------
             # Ask Gemini what to do next.
             # -----------------------------------------------------
@@ -128,7 +151,9 @@ class InvestigationAgent:
                             "investigation_completed_with_errors"
                         ),
                         "investigation_complete": True,
-                        "investigation_iteration": iteration,
+                        "investigation_iteration": (
+                            investigation_iteration
+                        ),
                         "findings": [response.text],
                         "investigation_history": history,
                         "failures": failures,
@@ -159,9 +184,17 @@ class InvestigationAgent:
                         arguments=next_arguments,
                     )
 
+                    failure = self._build_tool_failure(
+                        tool_name=next_tool,
+                        result=result,
+                    )
+
+                    if failure:
+                        failures.append(failure)
+
                     history.append(
                         {
-                            "iteration": iteration,
+                            "iteration": investigation_iteration,
                             "tool": next_tool,
                             "arguments": next_arguments,
                             "result": result,
@@ -187,7 +220,9 @@ class InvestigationAgent:
                         return {
                             "status": "max_iterations_reached",
                             "investigation_complete": False,
-                            "investigation_iteration": iteration,
+                            "investigation_iteration": (
+                                investigation_iteration
+                            ),
                             "findings": [],
                             "investigation_history": history,
                             "failures": failures,
@@ -219,9 +254,12 @@ Do not provide a conclusion yet.
                         return {
                             "status": "max_iterations_reached",
                             "investigation_complete": False,
-                            "investigation_iteration": iteration,
+                            "investigation_iteration": (
+                                investigation_iteration
+                            ),
                             "findings": [],
                             "investigation_history": history,
+                            "failures": failures,
                         }
 
                     missing_source_text = ", ".join(
@@ -257,7 +295,9 @@ Do not invent evidence.
                 return {
                     "status": "investigation_completed",
                     "investigation_complete": True,
-                    "investigation_iteration": iteration,
+                    "investigation_iteration": (
+                        investigation_iteration
+                    ),
                     "findings": (
                         [response.text]
                         if response.text
@@ -319,14 +359,12 @@ Do not invent evidence.
                             retryable=False,
                             blocking=False,
                             tool=tool_name,
-
                         )
                     )
-                    
 
                     history.append(
                         {
-                            "iteration": iteration,
+                            "iteration": investigation_iteration,
                             "tool": tool_name,
                             "arguments": arguments,
                             "result": result,
@@ -358,13 +396,21 @@ the investigation plan.
                     arguments=arguments,
                 )
 
+                failure = self._build_tool_failure(
+                    tool_name=tool_name,
+                    result=result,
+                )
+
+                if failure:
+                    failures.append(failure)
+
                 # -------------------------------------------------
                 # Store complete tool execution history.
                 # -------------------------------------------------
 
                 history.append(
                     {
-                        "iteration": iteration,
+                        "iteration": investigation_iteration,
                         "tool": tool_name,
                         "arguments": arguments,
                         "result": result,
@@ -389,7 +435,12 @@ the investigation plan.
         return {
             "status": "max_iterations_reached",
             "investigation_complete": False,
-            "investigation_iteration": self.max_iterations,
+            "investigation_iteration": (
+                history[-1]["iteration"]
+                if history
+                else
+                previous_investigation_iteration
+            ),
             "findings": [],
             "investigation_history": history,
             "failures": failures,
@@ -533,6 +584,59 @@ the investigation plan.
         return None, {}
 
     # =================================================================
+    # FAILURE NORMALIZATION
+    # =================================================================
+
+    def _build_tool_failure(
+        self,
+        *,
+        tool_name: str,
+        result: Any,
+    ) -> dict[str, Any] | None:
+
+        if not isinstance(result, dict):
+            return None
+
+        error = result.get("error")
+
+        if not error:
+            return None
+
+        category = result.get(
+            "failure_category",
+            TOOL_EXECUTION_FAILURE,
+        )
+
+        if category == INVALID_TOOL_CALL:
+            return build_failure(
+                category=INVALID_TOOL_CALL,
+                source="investigation_agent",
+                message=str(error),
+                retryable=False,
+                blocking=False,
+                tool=tool_name,
+            )
+
+        if category == GUARDRAIL_BLOCKED:
+            return build_failure(
+                category=GUARDRAIL_BLOCKED,
+                source="investigation_agent",
+                message=str(error),
+                retryable=False,
+                blocking=False,
+                tool=tool_name,
+            )
+
+        return build_failure(
+            category=TOOL_EXECUTION_FAILURE,
+            source="investigation_agent",
+            message=str(error),
+            retryable=True,
+            blocking=False,
+            tool=tool_name,
+        )
+
+    # =================================================================
     # TOOL EXECUTION
     # =================================================================
 
@@ -554,7 +658,7 @@ the investigation plan.
                 "tool": tool_name,
                 "error": str(exc),
                 "guardrail_blocked": True,
-                "failure_category": INVALID_TOOL_CALL,
+                "failure_category": GUARDRAIL_BLOCKED,
             }
 
         tool = self.tool_map.get(tool_name)
@@ -568,6 +672,7 @@ the investigation plan.
                     f"Available tools: "
                     f"{list(self.tool_map.keys())}"
                 ),
+                "failure_category": INVALID_TOOL_CALL,
             }
 
         try:
@@ -592,11 +697,11 @@ the investigation plan.
         except Exception as exc:
 
             # Tool failures are recorded in the investigation
-            # history and classified as structured failures
+            # history and classified as structured failures.
             return {
                 "tool": tool_name,
                 "error": str(exc),
-                "failure_category": TOOL_EXECUTION_FAILURE
+                "failure_category": TOOL_EXECUTION_FAILURE,
             }
 
     # =================================================================
@@ -651,8 +756,7 @@ the investigation plan.
                 isinstance(result, dict)
                 and result.get("error")
             ):
-              continue
-
+                continue
 
             if tool_name.startswith("jira_"):
                 executed_sources.add("jira")

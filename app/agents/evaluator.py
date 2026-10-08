@@ -13,6 +13,37 @@ class EvaluatorResult(BaseModel):
     retry_required: bool
     human_review_required: bool
 
+    def validate_invariants(self) -> None:
+        """
+        Validate logical consistency between evaluator decisions.
+
+        The evaluator must not produce contradictory states such as:
+        - evaluation_passed=True with evidence_sufficient=False
+        - evaluation_passed=True with retry_required=True
+        - evaluation_passed=True with human_review_required=True
+        """
+
+        if self.evaluation_passed and not self.evidence_sufficient:
+            raise ValueError(
+                "Evaluator invariant violated: "
+                "evaluation_passed cannot be true when "
+                "evidence_sufficient is false."
+            )
+
+        if self.evaluation_passed and self.retry_required:
+            raise ValueError(
+                "Evaluator invariant violated: "
+                "evaluation_passed and retry_required "
+                "cannot both be true."
+            )
+
+        if self.evaluation_passed and self.human_review_required:
+            raise ValueError(
+                "Evaluator invariant violated: "
+                "evaluation_passed and human_review_required "
+                "cannot both be true."
+            )
+
 
 class EvaluatorAgent:
     """Evaluate whether the investigation produced sufficient evidence."""
@@ -118,6 +149,7 @@ NORMALIZED EVIDENCE
 ============================================================
 
 {json.dumps(evidence, indent=2, default=str)}
+
 ============================================================
 EVALUATION RULES
 ============================================================
@@ -308,4 +340,10 @@ Use exactly this structure:
                 "Evaluator confidence must be between 0 and 1."
             )
 
-        return result
+        # Validate the complete evaluator result through Pydantic.
+        validated = EvaluatorResult.model_validate(result)
+
+        # Validate logical consistency between decision fields.
+        validated.validate_invariants()
+
+        return validated.model_dump()

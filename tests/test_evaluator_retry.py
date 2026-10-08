@@ -1,3 +1,4 @@
+import pytest
 from app.agents.evaluator import (
     EvaluatorAgent,
     EvaluatorResult,
@@ -111,3 +112,54 @@ def test_evaluator_detects_missing_github_evidence():
     assert result["confidence"] < 1.0
 
     assert "GitHub" in result["reason"]
+
+
+def test_evaluator_rejects_pass_without_sufficient_evidence():
+
+    result = EvaluatorResult(
+        evaluation_passed=True,
+        confidence=0.9,
+        reason="Contradictory evaluator output.",
+        evidence_sufficient=False,
+        retry_required=False,
+        human_review_required=False,
+    )
+
+    with pytest.raises(ValueError, match="evaluation_passed cannot be true"):
+        result.validate_invariants()
+
+
+def test_evaluator_rejects_pass_with_retry_required():
+
+    result = EvaluatorResult(
+        evaluation_passed=True,
+        confidence=0.9,
+        reason="Contradictory evaluator output.",
+        evidence_sufficient=True,
+        retry_required=True,
+        human_review_required=False,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="evaluation_passed and retry_required",
+    ):
+        result.validate_invariants()
+
+
+def test_evaluator_rejects_pass_with_human_review_required():
+
+    result = EvaluatorResult(
+        evaluation_passed=True,
+        confidence=0.9,
+        reason="Contradictory evaluator output.",
+        evidence_sufficient=True,
+        retry_required=False,
+        human_review_required=True,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="evaluation_passed and human_review_required",
+    ):
+        result.validate_invariants()

@@ -16,7 +16,9 @@ from app.errors.failures import (
 async def investigator(state: EnterpriseState):
     llm = GeminiClient()
 
-    required_sources = set(state.get("required_sources", []))
+    required_sources = set(
+        state.get("required_sources", [])
+    )
 
     failures = []
 
@@ -25,12 +27,14 @@ async def investigator(state: EnterpriseState):
     tools = []
 
     try:
-        # Connect only to the MCP sources required by the investigation plan.
+        # Connect only to the MCP sources required by the
+        # investigation plan.
         if "jira" in required_sources:
             jira_client = JiraMCPClient()
 
             try:
                 await jira_client.connect()
+
             except Exception as exc:
                 failures.append(
                     build_failure(
@@ -41,15 +45,24 @@ async def investigator(state: EnterpriseState):
                         blocking=True,
                     )
                 )
+
                 jira_client = None
+
             else:
-                jira_provider = JiraMCPToolProvider(jira_client)
-                tools.extend(jira_provider.get_tools())
+                jira_provider = JiraMCPToolProvider(
+                    jira_client
+                )
+
+                tools.extend(
+                    jira_provider.get_tools()
+                )
 
         if "github" in required_sources:
             github_client = GitHubMCPClient()
+
             try:
                 await github_client.connect()
+
             except Exception as exc:
                 failures.append(
                     build_failure(
@@ -60,18 +73,25 @@ async def investigator(state: EnterpriseState):
                         blocking=True,
                     )
                 )
+
                 github_client = None
+
             else:
-                github_provider = GitHubMCPToolProvider(github_client)
-                tools.extend(github_provider.get_tools())
+                github_provider = GitHubMCPToolProvider(
+                    github_client
+                )
 
-
-            
+                tools.extend(
+                    github_provider.get_tools()
+                )
 
         agent = InvestigationAgent(
             llm=llm,
             tools=tools,
-            max_iterations=state.get("max_investigation_iterations", 5),
+            max_iterations=state.get(
+                "max_investigation_iterations",
+                5,
+            ),
         )
 
         plan = state.get("plan", [])
@@ -80,7 +100,10 @@ async def investigator(state: EnterpriseState):
 
         for task in plan:
             if hasattr(task, "model_dump"):
-                normalized_plan.append(task.model_dump())
+                normalized_plan.append(
+                    task.model_dump()
+                )
+
             elif isinstance(task, dict):
                 normalized_plan.append(task)
 
@@ -100,9 +123,15 @@ async def investigator(state: EnterpriseState):
             state=investigation_state,
         )
 
-        history = result.get("investigation_history", [])
+        history = result.get(
+            "investigation_history",
+            [],
+        )
 
-        investigation_failures = result.get("failures", [])
+        investigation_failures = result.get(
+            "failures",
+            [],
+        )
 
         all_failures = [
             *failures,
@@ -125,9 +154,22 @@ async def investigator(state: EnterpriseState):
             "jira_get_current_sprint",
         }
 
+        # ---------------------------------------------------------
+        # Convert only successful tool executions into source data.
+        #
+        # Failed or blocked tool calls remain in investigation_history
+        # and failures[], but must never become factual source data.
+        # ---------------------------------------------------------
+
         for item in history:
             tool_name = item.get("tool")
             tool_result = item.get("result")
+
+            if (
+                isinstance(tool_result, dict)
+                and tool_result.get("error")
+            ):
+                continue
 
             if tool_name in github_tool_names:
                 github_data[tool_name] = tool_result
@@ -138,14 +180,19 @@ async def investigator(state: EnterpriseState):
         return {
             "investigation_history": history,
             "investigation_iteration": result.get(
-                "investigation_iteration", 0
+                "investigation_iteration",
+                0,
             ),
             "investigation_complete": result.get(
-                "investigation_complete", False
+                "investigation_complete",
+                False,
             ),
             "github_data": github_data,
             "jira_data": jira_data,
-            "findings": result.get("findings", []),
+            "findings": result.get(
+                "findings",
+                [],
+            ),
             "failures": all_failures,
             "status": result.get(
                 "status",
@@ -157,6 +204,7 @@ async def investigator(state: EnterpriseState):
         # Cleanup only the MCP clients that were actually connected.
         # Cleanup is best-effort so one close failure does not prevent
         # the other client from being closed.
+
         if github_client is not None:
             try:
                 await github_client.close()

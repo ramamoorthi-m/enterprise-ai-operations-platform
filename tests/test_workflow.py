@@ -4,6 +4,7 @@ from app.workflow.graph import graph
 from app.workflow.investigator import investigator
 from app.llm.client import GeminiClient
 from app.llm.groq_client import GroqClient
+from langgraph.types import Command
 
 
 # ------------------------------------------------------------------
@@ -718,3 +719,351 @@ async def test_one_mcp_failure_does_not_block_other_source(
     ]
 
     assert github_failures == []
+
+@pytest.mark.asyncio
+async def test_enterprise_workflow_human_review_approve(monkeypatch):
+
+    global _tool_call_count
+    _tool_call_count = 0
+
+    # --------------------------------------------------------------
+    # Mock MCP clients
+    # --------------------------------------------------------------
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.GitHubMCPClient",
+        FakeGitHubClient,
+    )
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.JiraMCPClient",
+        FakeJiraClient,
+    )
+
+    # --------------------------------------------------------------
+    # Mock Gemini tool calling
+    # --------------------------------------------------------------
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_with_tools",
+        fake_generate_with_tools,
+    )
+
+    # --------------------------------------------------------------
+    # Force the Evaluator to request human review.
+    #
+    # Planner and Analysis can use the existing generic fake.
+    # --------------------------------------------------------------
+
+    def fake_hitl_generate_structured(
+        self,
+        prompt: str,
+        response_schema,
+    ):
+        schema_name = response_schema.__name__
+
+        if schema_name == "EvaluatorResult":
+            return response_schema(
+                evaluation_passed=False,
+                confidence=0.55,
+                reason=(
+                    "Evidence is available, but the investigation "
+                    "requires human approval before completion."
+                ),
+                evidence_sufficient=True,
+                retry_required=False,
+                human_review_required=True,
+            )
+
+        return fake_generate_structured(
+            self,
+            prompt,
+            response_schema,
+        )
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_structured",
+        fake_hitl_generate_structured,
+    )
+
+    monkeypatch.setattr(
+        GroqClient,
+        "generate_structured",
+        fake_hitl_generate_structured,
+    )
+
+    monkeypatch.setattr(
+        GroqClient,
+        "generate",
+        fake_generate,
+    )
+
+    # --------------------------------------------------------------
+    # Initial workflow state
+    # --------------------------------------------------------------
+
+    initial_state = {
+        "user_query": (
+            "Analyze the current project status and "
+            "identify potential delivery blockers."
+        ),
+        "project": "SCRUM",
+        "plan": [],
+        "required_sources": [],
+        "github_data": {},
+        "jira_data": {},
+        "doc_data": {},
+        "slack_data": {},
+        "findings": [],
+        "evidence": [],
+        "investigation_history": [],
+        "investigation_iteration": 0,
+        "max_investigation_iterations": 5,
+        "investigation_complete": False,
+        "report": "",
+        "confidence": 0.0,
+        "human_review_required": False,
+        "human_review_decision": "",
+        "human_review_reason": "",
+        "errors": [],
+        "failures": [],
+        "status": "",
+        "evaluation_passed": False,
+        "retry_count": 0,
+        "max_retries": 2,
+        "retry_required": False,
+    }
+
+    config = {
+        "configurable": {
+            "thread_id": "test-enterprise-workflow-hitl-approve",
+        }
+    }
+
+    # --------------------------------------------------------------
+    # First invocation must pause at human review.
+    # --------------------------------------------------------------
+
+    interrupted = await graph.ainvoke(
+        initial_state,
+        config=config,
+    )
+
+    assert interrupted["__interrupt__"]
+
+    assert interrupted["human_review_required"] is True
+
+    assert interrupted["evaluation_passed"] is False
+
+    # --------------------------------------------------------------
+    # Resume the SAME graph execution with human approval.
+    # --------------------------------------------------------------
+
+    result = await graph.ainvoke(
+        Command(resume="approve"),
+        config=config,
+    )
+
+    # --------------------------------------------------------------
+    # Verify the human decision was persisted.
+    # --------------------------------------------------------------
+
+    assert result["human_review_decision"] == "approve"
+
+    # --------------------------------------------------------------
+    # Verify approval routed to report generation.
+    # --------------------------------------------------------------
+
+    assert result["status"] == "report_generated"
+
+    assert result["report"]
+
+    assert result["human_review_required"] is True
+
+# ------------------------------------------------------------------
+# Human review -> retry integration
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enterprise_workflow_human_review_retry(monkeypatch):
+
+    global _tool_call_count
+    _tool_call_count = 0
+
+    # --------------------------------------------------------------
+    # Mock MCP clients
+    # --------------------------------------------------------------
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.GitHubMCPClient",
+        FakeGitHubClient,
+    )
+
+    monkeypatch.setattr(
+        "app.workflow.investigator.JiraMCPClient",
+        FakeJiraClient,
+    )
+
+    # --------------------------------------------------------------
+    # Mock Gemini tool calling
+    # --------------------------------------------------------------
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_with_tools",
+        fake_generate_with_tools,
+    )
+
+    # --------------------------------------------------------------
+    # Evaluator behavior:
+    #
+    # First evaluation  -> human review
+    # Second evaluation -> success after human retry
+    # --------------------------------------------------------------
+
+    evaluator_calls = 0
+
+    def fake_hitl_retry_generate_structured(
+        self,
+        prompt: str,
+        response_schema,
+    ):
+        nonlocal evaluator_calls
+
+        if response_schema.__name__ == "EvaluatorResult":
+            evaluator_calls += 1
+
+            if evaluator_calls == 1:
+                return response_schema(
+                    evaluation_passed=False,
+                    confidence=0.55,
+                    reason=(
+                        "Evidence requires additional investigation "
+                        "before completion."
+                    ),
+                    evidence_sufficient=True,
+                    retry_required=False,
+                    human_review_required=True,
+                )
+
+            return response_schema(
+                evaluation_passed=True,
+                confidence=0.90,
+                reason="Investigation completed successfully after retry.",
+                evidence_sufficient=True,
+                retry_required=False,
+                human_review_required=False,
+            )
+
+        return fake_generate_structured(
+            self,
+            prompt,
+            response_schema,
+        )
+
+    monkeypatch.setattr(
+        GeminiClient,
+        "generate_structured",
+        fake_hitl_retry_generate_structured,
+    )
+
+    monkeypatch.setattr(
+        GroqClient,
+        "generate_structured",
+        fake_hitl_retry_generate_structured,
+    )
+
+    monkeypatch.setattr(
+        GroqClient,
+        "generate",
+        fake_generate,
+    )
+
+    # --------------------------------------------------------------
+    # Initial workflow state
+    # --------------------------------------------------------------
+
+    initial_state = {
+        "user_query": (
+            "Analyze the current project status and "
+            "identify potential delivery blockers."
+        ),
+        "project": "SCRUM",
+        "plan": [],
+        "required_sources": [],
+        "github_data": {},
+        "jira_data": {},
+        "doc_data": {},
+        "slack_data": {},
+        "findings": [],
+        "evidence": [],
+        "investigation_history": [],
+        "investigation_iteration": 0,
+        "max_investigation_iterations": 5,
+        "investigation_complete": False,
+        "report": "",
+        "confidence": 0.0,
+        "human_review_required": False,
+        "human_review_decision": "",
+        "human_review_reason": "",
+        "errors": [],
+        "failures": [],
+        "status": "",
+        "evaluation_passed": False,
+        "retry_count": 0,
+        "max_retries": 2,
+        "retry_required": False,
+    }
+
+    config = {
+        "configurable": {
+            "thread_id": "test-enterprise-workflow-hitl-retry",
+        }
+    }
+
+    # --------------------------------------------------------------
+    # First invocation must pause at human review.
+    # --------------------------------------------------------------
+
+    interrupted = await graph.ainvoke(
+        initial_state,
+        config=config,
+    )
+
+    assert interrupted["__interrupt__"]
+
+    assert interrupted["human_review_required"] is True
+
+    assert interrupted["evaluation_passed"] is False
+
+    # --------------------------------------------------------------
+    # Human chooses retry.
+    # --------------------------------------------------------------
+
+    result = await graph.ainvoke(
+        Command(resume="retry"),
+        config=config,
+    )
+
+    # --------------------------------------------------------------
+    # Retry must go back through the workflow and eventually succeed.
+    # --------------------------------------------------------------
+
+    assert result["human_review_decision"] == "retry"
+
+    assert result["retry_count"] == 1
+
+    assert result["evaluation_passed"] is True
+
+    assert result["human_review_required"] is False
+
+    assert result["retry_required"] is False
+
+    assert result["status"] == "report_generated"
+
+    assert result["report"]
+
+    assert evaluator_calls == 2

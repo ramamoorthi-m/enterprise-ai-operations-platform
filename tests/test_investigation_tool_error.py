@@ -1,4 +1,5 @@
 import pytest
+
 from app.agents.investigation import InvestigationAgent
 
 
@@ -25,8 +26,12 @@ class FailingLLM:
     def __init__(self):
         self.calls = 0
 
-    def generate_with_tools(self, contents, tools, force_tool_call=False):
-
+    def generate_with_tools(
+        self,
+        contents,
+        tools,
+        force_tool_call=False,
+    ):
         self.calls += 1
 
         if self.calls == 1:
@@ -50,6 +55,7 @@ def failing_tool(project: str):
 
 
 failing_tool.name = "failing_tool"
+
 
 @pytest.mark.asyncio
 async def test_investigation_handles_tool_error():
@@ -87,11 +93,21 @@ async def test_investigation_handles_tool_error():
     assert "Jira API unavailable" in history_item["result"]["error"]
 
     assert (
-    history_item["result"]["failure_category"]
-    == "tool_execution_failure"
+        history_item["result"]["failure_category"]
+        == "tool_execution_failure"
     )
 
+    # The tool failure must be normalized into failures.
     assert "failures" in result
+    assert len(result["failures"]) == 1
+
+    failure = result["failures"][0]
+
+    assert failure["category"] == "tool_execution_failure"
+    assert failure["source"] == "investigation_agent"
+    assert failure["retryable"] is True
+    assert failure["blocking"] is False
+    assert failure["tool"] == "failing_tool"
 
 
 class InvalidToolLLM:
@@ -159,6 +175,8 @@ async def test_investigation_handles_invalid_tool_call():
         == "invalid_tool_call"
     )
 
+    # Invalid tool calls must be normalized into failures.
+    assert "failures" in result
     assert len(result["failures"]) == 1
 
     failure = result["failures"][0]
@@ -167,3 +185,4 @@ async def test_investigation_handles_invalid_tool_call():
     assert failure["source"] == "investigation_agent"
     assert failure["retryable"] is False
     assert failure["blocking"] is False
+    assert failure["tool"] == "nonexistent_tool"
