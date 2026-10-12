@@ -2,13 +2,10 @@ from app.llm.groq_client import GroqClient
 
 
 def main():
-    client = GroqClient(
-        model="openai/gpt-oss-120b"
-    )
+    client = GroqClient()
 
     response = client.generate(
-        "Explain in two sentences why evidence validation "
-        "is important in an enterprise AI operations platform."
+        "Reply with exactly: Groq connection works."
     )
 
     print("\nGroq response:\n")

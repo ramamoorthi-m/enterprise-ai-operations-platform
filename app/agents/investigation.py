@@ -724,7 +724,7 @@ the investigation plan.
         )
 
         return types.Content(
-            role="tool",
+            role="user",
             parts=[
                 function_response_part
             ],

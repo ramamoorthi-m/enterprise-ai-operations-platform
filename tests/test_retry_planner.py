@@ -185,7 +185,7 @@ def test_planner_uses_previous_context_on_retry(monkeypatch):
     # ----------------------------------------------------------
 
     assert result["status"] == "planning_completed"
-    assert result["project"] == "SCRUM"
+    assert "project" not in result
     assert result["plan"]
 
     assert result["required_sources"] == ["github"]

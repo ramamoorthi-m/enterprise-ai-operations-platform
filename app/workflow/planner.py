@@ -183,7 +183,6 @@ User request:
     )
 
     return {
-        "project": investigation_plan.project,
         "plan": [
             {
                 "description": task.description,

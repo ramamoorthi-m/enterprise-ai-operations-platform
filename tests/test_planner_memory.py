@@ -58,6 +58,6 @@ def test_planner_uses_persistent_memory():
     assert "[FACT]" in prompt
     assert "source: jira" in prompt
 
-    assert result["project"] == "SCRUM"
+    assert "project" not in result
     assert len(result["plan"]) == 1
     assert result["plan"][0]["source"] == "jira"

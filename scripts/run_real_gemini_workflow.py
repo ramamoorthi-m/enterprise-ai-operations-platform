@@ -9,8 +9,7 @@ async def main():
 
     initial_state = {
         "user_query": (
-            "Analyze the current project status and "
-            "identify potential delivery blockers."
+            "What is the current status of our operations?"
         ),
 
         "project": "SCRUM",
@@ -39,7 +38,7 @@ async def main():
         "evaluation_passed": False,
 
         "retry_count": 0,
-        "max_retries": 2,
+        "max_retries": 0,
     }
 
     print("=" * 70)
@@ -53,7 +52,22 @@ async def main():
     print("This run uses the REAL Gemini API.")
     print("Gemini API quota will be consumed.")
 
-    result = await graph.ainvoke(initial_state)
+    result = await graph.ainvoke(
+        initial_state,
+        config={
+            "configurable": {
+                "thread_id":
+                "scrum-smoke-test-20261010-01"
+            }
+        }
+    )
+
+    print("\n======== FULL WORKFLOW RESULT =========")
+
+    from pprint import pprint
+    print(result)
+
+    print("=====================================")
 
     print("\n" + "=" * 70)
     print("WORKFLOW COMPLETED")

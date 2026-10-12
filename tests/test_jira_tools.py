@@ -37,7 +37,7 @@ def test_get_open_tasks_tool(monkeypatch):
         ),
     )
 
-    result = get_open_tasks.invoke({})
+    result = get_open_tasks.invoke({"project": "SCRUM"})
 
     assert "project" in result
     assert "open_tasks" in result
@@ -61,7 +61,7 @@ def test_get_blocked_tasks_tool(monkeypatch):
         ),
     )
 
-    result = get_blocked_tasks.invoke({})
+    result = get_blocked_tasks.invoke({"project": "SCRUM"})
 
     assert "project" in result
     assert "blocked_tasks" in result
@@ -84,7 +84,7 @@ def test_get_overdue_tasks_tool(monkeypatch):
         ),
     )
 
-    result = get_overdue_tasks.invoke({})
+    result = get_overdue_tasks.invoke({"project": "SCRUM"})
 
     assert "project" in result
     assert "overdue_tasks" in result
@@ -118,7 +118,7 @@ def test_get_current_sprint_tool(monkeypatch):
         ),
     )
 
-    result = get_current_sprint.invoke({})
+    result = get_current_sprint.invoke({"project": "SCRUM"})
 
     assert "project" in result
     assert "current_sprint" in result
