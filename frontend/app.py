@@ -1,4 +1,5 @@
 import json
+import os
 
 import requests
 import streamlit as st
@@ -8,7 +9,11 @@ import streamlit as st
 # Configuration
 # ============================================================
 
-API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL = os.getenv(
+    "API_BASE_URL",
+    "http://127.0.0.1:8000",
+).rstrip("/")
+
 INVESTIGATE_URL = f"{API_BASE_URL}/api/v1/investigate"
 RESUME_URL = f"{API_BASE_URL}/api/v1/investigate/resume"
 
@@ -93,7 +98,7 @@ def start_investigation(query: str, project: str) -> None:
     except requests.exceptions.ConnectionError:
         save_api_error(
             "Cannot connect to FastAPI. Start the backend at "
-            "http://127.0.0.1:8000."
+            f"{API_BASE_URL}."
         )
 
     except requests.exceptions.RequestException as exc:
@@ -247,7 +252,7 @@ with st.sidebar:
         clear_api_error()
         st.rerun()
 
-    st.caption("Backend API: 127.0.0.1:8000")
+    st.caption("Backend API: {API_BASE_URL}")
 
 
 # ============================================================

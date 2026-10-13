@@ -1,0 +1,60 @@
+services:
+  jira-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: ["python", "-m", "app.mcp.jira_server"]
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+    restart: unless-stopped
+
+  github-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: ["python", "-m", "app.mcp.github_server"]
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command:
+      - uvicorn
+      - app.api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      JIRA_MCP_SERVER_URL: http://jira-mcp:8001/mcp
+      GITHUB_MCP_SERVER_URL: http://github-mcp:8002/mcp
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - jira-mcp
+      - github-mcp
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+    ports:
+      - "8502:8501"
+    depends_on:
+      - api
+    restart: unless-stopped

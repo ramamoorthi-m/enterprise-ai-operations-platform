@@ -52,7 +52,7 @@ def jira_get_current_sprint(project: str) -> dict:
 if __name__ == "__main__":
     mcp.run(
         transport="streamable-http",
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=8001,
         stateless_http=True,
         json_response=True,

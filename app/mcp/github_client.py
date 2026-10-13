@@ -1,3 +1,4 @@
+import os
 import json
 
 import httpx2
@@ -5,7 +6,10 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 
-MCP_SERVER_URL = "http://127.0.0.1:8002/mcp"
+MCP_SERVER_URL = os.getenv(
+    "GITHUB_MCP_SERVER_URL",
+    "http://127.0.0.1:8002/mcp",
+)
 
 
 class GitHubMCPClient:
