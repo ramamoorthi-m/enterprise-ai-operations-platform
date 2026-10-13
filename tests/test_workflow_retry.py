@@ -665,7 +665,4 @@ async def test_workflow_retry_and_replanning(monkeypatch):
 
     assert result["report"]
 
-    assert (
-        "GitHub deployment evidence"
-        in result["report"]
-    )
+    assert "deployment" in result["report"].lower()

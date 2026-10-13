@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from langgraph.types import Command
+from google.genai.errors import APIError as GeminiAPIError
 
 from app.api.main import app
 
@@ -189,3 +190,22 @@ def test_investigate_rejects_short_query():
     )
 
     assert response.status_code == 422
+
+
+@patch("app.api.main.graph.ainvoke", new_callable=AsyncMock)
+def test_investigate_maps_gemini_503_to_http_503(mock_ainvoke):
+    mock_ainvoke.side_effect = GeminiAPIError(
+        503,
+        {"error": {"message": "Service unavailable"}},
+    )
+
+    response = client.post(
+        "/api/v1/investigate",
+        json={"query": "Why is the deployment delayed?"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Gemini is temporarily unavailable. Please try again later."
+    )
+    mock_ainvoke.assert_awaited_once()

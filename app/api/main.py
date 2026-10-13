@@ -3,8 +3,9 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from google.genai.errors import APIError as GeminiAPIError
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 from app.config.settings import settings
 from app.workflow.graph import graph
@@ -139,14 +140,54 @@ async def investigate(request: InvestigationRequest):
         result = await graph.ainvoke(initial_state, config=config)
         return build_response(result, thread_id)
 
-    except Exception:
+    except GeminiAPIError as exc:
+        logger.exception(
+            "Gemini API request failed; thread_id=%s",
+            thread_id,
+        )
+
+        status_code = getattr(exc, "code", None)
+
+        if status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Gemini quota or rate limit exceeded. "
+                    "Check your Gemini API quota and retry availability."
+                ),
+            ) from None
+
+        if status_code == 503:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Gemini is temporarily unavailable. "
+                    "Please try again later."
+                ),
+            ) from None
+
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "The Gemini provider request failed. "
+                f"Provider status: {status_code or 'unknown'}. "
+                "Check backend logs for details."
+            ),
+        ) from None
+
+    except Exception as exc:
         logger.exception(
             "Investigation workflow failed; thread_id=%s",
             thread_id,
         )
         raise HTTPException(
             status_code=500,
-            detail="Investigation workflow failed.",
+            detail=(
+                "Investigation workflow failed "
+                f"({type(exc).__name__}). "
+                f"Reference: {thread_id}. "
+                "Check backend logs for details."
+            ),
         ) from None
 
 
