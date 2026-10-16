@@ -8,6 +8,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from app.config.settings import settings
+from app.storage.database import init_db
 from app.workflow.graph import graph
 
 
@@ -17,6 +18,10 @@ app = FastAPI(
     title="Enterprise AI Operations Platform",
     version="0.3.0",
 )
+
+@app.on_event("startup")
+def initialize_database():
+    init_db()
 
 
 class InvestigationRequest(BaseModel):
