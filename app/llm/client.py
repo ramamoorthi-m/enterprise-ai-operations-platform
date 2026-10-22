@@ -39,7 +39,7 @@ class GeminiClient:
                     exp_base=2.0,
                     jitter=1.0,
                     http_status_codes=[
-                        408, 429, 500, 502, 503, 504
+                        408, 500, 502, 503, 504
                     ],
                 ),
             ),
