@@ -1,16 +1,19 @@
 import pytest
 
+from app.storage.database import init_db
 from app.llm.client import GeminiClient
 
 
 @pytest.fixture(autouse=True)
 def block_real_gemini_calls(monkeypatch):
     """
-    Prevent pytest from making real Gemini API calls.
+    Initialize the database and prevent pytest from making real Gemini API calls.
 
     Individual tests that need LLM behavior must explicitly
     monkeypatch the appropriate GeminiClient method.
     """
+
+    init_db()
 
     def blocked_generate(*args, **kwargs):
         raise RuntimeError(
