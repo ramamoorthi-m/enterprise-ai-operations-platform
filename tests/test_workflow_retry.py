@@ -265,6 +265,26 @@ async def test_workflow_retry_and_replanning(monkeypatch):
     )
 
     monkeypatch.setattr(
+        GroqClient,
+        "generate",
+        lambda self, prompt: (
+            "# Enterprise Project Investigation Report\n\n"
+            "## Investigation Request\n"
+            "Analyze project status and identify delivery blockers.\n\n"
+            "## Executive Summary\n"
+            "The investigation completed after retrying with GitHub as the focus.\n\n"
+            "## Key Findings\n"
+            "GitHub deployment evidence was retrieved during the retry.\n\n"
+            "## Risks\n"
+            "The initial Jira evidence collection failed, limiting the initial assessment.\n\n"
+            "## Evidence Gaps\n"
+            "Jira evidence remains unavailable from the failed tool attempt.\n\n"
+            "## Confidence\n"
+            "Moderate confidence, based on the successfully retrieved GitHub evidence."
+        ),
+    )
+
+    monkeypatch.setattr(
         GeminiClient,
         "generate_structured",
         fake_generate_structured,
