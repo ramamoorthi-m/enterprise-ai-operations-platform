@@ -37,4 +37,18 @@ jobs:
         run: uv sync --locked --group dev
 
       - name: Run tests
+        env:
+          APP_NAME: Enterprise AI Operations Platform CI
+          ENVIRONMENT: test
+          LOG_LEVEL: INFO
+          JIRA_URL: https://example.atlassian.net
+          JIRA_EMAIL: ci@example.com
+          JIRA_API_TOKEN: ci-placeholder
+          JIRA_PROJECT_KEY: TEST
+          GITHUB_TOKEN: ci-placeholder
+          GITHUB_OWNER: ci-placeholder
+          GITHUB_REPO: ci-placeholder
+          GEMINI_API_KEY: ci-placeholder
+          GEMINI_MODEL: gemini-2.5-flash
+          GROQ_API_KEY: ci-placeholder
         run: uv run --locked pytest -q
