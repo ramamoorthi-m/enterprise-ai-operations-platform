@@ -61,6 +61,26 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Diagnose EC2 SSH connectivity
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          echo "Checking whether EC2_HOST matches the expected address..."
+
+          if [ "$EC2_HOST" = "16.176.134.59" ]; then
+            echo "EC2_HOST matches the current EC2 public IP."
+          else
+            echo "EC2_HOST does not match the current EC2 public IP."
+          fi
+
+          echo "Testing TCP port 22..."
+
+          if timeout 10 bash -c 'echo > /dev/tcp/$EC2_HOST/22'; then
+            echo "TCP port 22 is reachable."
+          else
+            echo "TCP port 22 is not reachable."
+          fi
+
       - name: Deploy application
         uses: appleboy/ssh-action@v1.2.0
         with:
