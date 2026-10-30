@@ -52,3 +52,25 @@ jobs:
           GEMINI_MODEL: gemini-2.5-flash
           GROQ_API_KEY: ci-placeholder
         run: uv run --locked pytest -q
+
+  deploy:
+    name: Deploy to EC2
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Deploy application
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -e
+            cd /home/ec2-user/enterprise-ai-operations-platform
+            git pull --ff-only origin main
+            docker compose up -d --build
+            docker compose ps
